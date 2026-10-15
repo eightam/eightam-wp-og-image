@@ -69,9 +69,13 @@ function page_assets( $hook ): void {
 				'sample'  => rest_url( ROUTE . '/sample' ),
 				'nonce'   => wp_create_nonce( 'wp_rest' ),
 				'option'  => OPTION,
+				'convert' => rest_url( ROUTE . '/convert' ),
+				'woff2'   => plugins_url( 'assets/vendor/woff2/decompress.js', FILE ),
+				'jobs'    => jobs(),
 				'palette' => array_slice( array_keys( (array) Brand\get()['palette'] ), 0, 10 ),
 				'choose'  => __( 'Choose an image', 'eightam-og-image' ),
 				'use'     => __( 'Use this image', 'eightam-og-image' ),
+				'working' => __( 'Preparing the logos and typefaces this site uses…', 'eightam-og-image' ),
 			)
 		) . ';',
 		'before'
@@ -218,7 +222,27 @@ function page(): void {
 				<h2><?php esc_html_e( 'Logo', 'eightam-og-image' ); ?></h2>
 				<table class="form-table" role="presentation">
 					<?php
-					image_row( $name( 'logo' ), (int) $s['logo'], __( 'Logo', 'eightam-og-image' ), __( 'The site’s logo', 'eightam-og-image' ), __( 'None', 'eightam-og-image' ), (int) $brand['logo'], __( 'A PNG, JPEG or WebP, about twice as large as it shows; an SVG only where the server’s Imagick reads SVG. Without one, the site’s name is set in its place.', 'eightam-og-image' ) );
+					image_row(
+						$name( 'logo' ),
+						(int) $s['logo'],
+						__( 'Logo', 'eightam-og-image' ),
+						array(
+							0  => Brand\is_blocksy() ? __( 'The page’s own (Blocksy’s header)', 'eightam-og-image' ) : __( 'The site’s logo', 'eightam-og-image' ),
+							-1 => __( 'None', 'eightam-og-image' ),
+						),
+						(int) $brand['logo'],
+						__( 'A PNG, JPEG, WebP or SVG. Without one, the site’s name is set in its place. With Blocksy Pro, a page with a header of its own shows that header’s logo.', 'eightam-og-image' )
+					);
+					choice_row(
+						$name( 'logo_size' ),
+						(string) $s['logo_size'],
+						__( 'Logo size', 'eightam-og-image' ),
+						array(
+							'small'  => __( 'Small', 'eightam-og-image' ),
+							'medium' => __( 'Medium', 'eightam-og-image' ),
+							'large'  => __( 'Large', 'eightam-og-image' ),
+						)
+					);
 					?>
 					<tr>
 						<th scope="row"><label for="eightam-og-logo-tab"><?php esc_html_e( 'On a tab', 'eightam-og-image' ); ?></label></th>
@@ -232,9 +256,33 @@ function page(): void {
 						</td>
 					</tr>
 					<?php
-					image_row( $name( 'mark' ), (int) $s['mark'], __( 'Mark', 'eightam-og-image' ), __( 'The site icon', 'eightam-og-image' ), __( 'None', 'eightam-og-image' ), (int) $brand['icon'], __( 'Drawn in the top corner of a card without a photograph.', 'eightam-og-image' ) );
+					image_row(
+						$name( 'mark' ),
+						(int) $s['mark'],
+						__( 'Mark', 'eightam-og-image' ),
+						array(
+							-1 => __( 'None', 'eightam-og-image' ),
+							0  => __( 'The site icon', 'eightam-og-image' ),
+						),
+						(int) $brand['icon'],
+						__( 'Drawn in the top corner of a card without a photograph.', 'eightam-og-image' )
+					);
 					?>
 				</table>
+
+				<h2><?php esc_html_e( 'Variants', 'eightam-og-image' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'A part of the site drawn differently: a page and every page under it, or a kind of post. The first variant that fits a page is used; what a variant leaves empty is as above.', 'eightam-og-image' ); ?></p>
+				<div class="eightam-og__variants" data-name="<?php echo esc_attr( $name( 'variants' ) ); ?>">
+					<?php
+					foreach ( (array) $s['variants'] as $index => $variant ) {
+						variant_row( $name( 'variants' ) . '[' . $index . ']', (array) $variant );
+					}
+					?>
+				</div>
+				<template id="eightam-og-variant">
+					<?php variant_row( $name( 'variants' ) . '[__i__]', array() ); ?>
+				</template>
+				<p><button type="button" class="button" id="eightam-og-add-variant"><?php esc_html_e( 'Add a variant', 'eightam-og-image' ); ?></button></p>
 
 				<h2><?php esc_html_e( 'What a card says', 'eightam-og-image' ); ?></h2>
 				<table class="form-table" role="presentation">
@@ -361,35 +409,153 @@ function page(): void {
 }
 
 /**
- * A row choosing an image: the site's, none, or one from the media library.
+ * A row choosing an image.
  *
- * @param string $name     Field name.
- * @param int    $value    0 the site's, -1 none, or an attachment ID.
- * @param string $label    Label.
- * @param string $site     What 0 is called.
- * @param string $none     What -1 is called.
- * @param int    $site_id  The site's image, if it has one.
- * @param string $help     A line of help.
+ * @param string            $name    Field name.
+ * @param int               $value   The value stored.
+ * @param string            $label   Label.
+ * @param array<int,string> $choices Values other than an image of the media
+ *                                   library, such as 0 for the site's, -1
+ *                                   for none, => what each is called.
+ * @param int               $site_id The image 0 stands for, to show.
+ * @param string            $help    A line of help.
  */
-function image_row( string $name, int $value, string $label, string $site, string $none, int $site_id, string $help ): void {
-	$mode  = $value > 0 ? 'custom' : ( -1 === $value ? 'none' : 'site' );
-	$shown = $value > 0 ? $value : ( 0 === $value ? $site_id : 0 );
-	$id    = 'eightam-og-' . sanitize_key( $name );
+function image_row( string $name, int $value, string $label, array $choices, int $site_id, string $help ): void {
+	$id = 'eightam-og-' . sanitize_key( $name );
 	?>
-	<tr class="eightam-og__image" data-site="<?php echo esc_attr( (string) $site_id ); ?>" data-site-url="<?php echo esc_url( $site_id ? (string) wp_get_attachment_image_url( $site_id, 'medium' ) : '' ); ?>">
+	<tr>
 		<th scope="row"><label for="<?php echo esc_attr( $id ); ?>"><?php echo esc_html( $label ); ?></label></th>
 		<td>
-			<input type="hidden" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( (string) $value ); ?>" />
-			<select id="<?php echo esc_attr( $id ); ?>" class="eightam-og__image-mode">
-				<option value="site" <?php selected( $mode, 'site' ); ?> <?php disabled( ! $site_id && 'site' !== $mode ); ?>><?php echo esc_html( $site . ( $site_id ? '' : ' ' . __( '(none set)', 'eightam-og-image' ) ) ); ?></option>
-				<option value="none" <?php selected( $mode, 'none' ); ?>><?php echo esc_html( $none ); ?></option>
-				<option value="custom" <?php selected( $mode, 'custom' ); ?>><?php esc_html_e( 'Another image…', 'eightam-og-image' ); ?></option>
-			</select>
-			<span class="eightam-og__thumb"><?php echo $shown ? wp_get_attachment_image( $shown, 'medium' ) : ''; ?></span>
+			<?php image_field( $name, $value, $choices, $site_id, $id ); ?>
 			<p class="description"><?php echo esc_html( $help ); ?></p>
 		</td>
 	</tr>
 	<?php
+}
+
+/**
+ * A field choosing an image: one of some values, or an image of the media
+ * library, with a thumbnail.
+ *
+ * @param string            $name    Field name.
+ * @param int               $value   The value stored.
+ * @param array<int,string> $choices Values other than an image => names.
+ * @param int               $site_id The image 0 stands for, to show.
+ * @param string            $id      The select's ID.
+ */
+function image_field( string $name, int $value, array $choices, int $site_id, string $id = '' ): void {
+	$custom = $value > 0;
+	$shown  = $custom ? $value : ( 0 === $value ? $site_id : 0 );
+	?>
+	<span class="eightam-og__image" data-site-url="<?php echo esc_url( $site_id ? (string) wp_get_attachment_image_url( $site_id, 'medium' ) : '' ); ?>">
+		<input type="hidden" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( (string) $value ); ?>" />
+		<select <?php echo '' !== $id ? 'id="' . esc_attr( $id ) . '"' : ''; ?> class="eightam-og__image-mode">
+			<?php foreach ( $choices as $choice => $text ) : ?>
+				<option value="<?php echo esc_attr( (string) $choice ); ?>" <?php selected( ! $custom && $value === $choice ); ?>><?php echo esc_html( $text ); ?></option>
+			<?php endforeach; ?>
+			<option value="custom" <?php selected( $custom ); ?>><?php esc_html_e( 'Another image…', 'eightam-og-image' ); ?></option>
+		</select>
+		<span class="eightam-og__thumb"><?php echo $shown ? wp_get_attachment_image( $shown, 'medium' ) : ''; ?></span>
+	</span>
+	<?php
+}
+
+/**
+ * One variant's fields.
+ *
+ * @param string              $name    Its field names' stem.
+ * @param array<string,mixed> $variant The variant, or nothing for a new one.
+ */
+function variant_row( string $name, array $variant ): void {
+	$target = (string) ( $variant['target'] ?? '' );
+	?>
+	<fieldset class="eightam-og__variant">
+		<label>
+			<span><?php esc_html_e( 'For', 'eightam-og-image' ); ?></span>
+			<select name="<?php echo esc_attr( $name . '[target]' ); ?>">
+				<optgroup label="<?php esc_attr_e( 'A page and the pages under it', 'eightam-og-image' ); ?>">
+					<?php foreach ( get_pages( array( 'sort_column' => 'menu_order,post_title' ) ) as $page ) : ?>
+						<option value="<?php echo esc_attr( 'page:' . $page->ID ); ?>" <?php selected( $target, 'page:' . $page->ID ); ?>><?php echo esc_html( str_repeat( '— ', count( get_post_ancestors( $page ) ) ) . ( '' !== $page->post_title ? $page->post_title : '#' . $page->ID ) ); ?></option>
+					<?php endforeach; ?>
+				</optgroup>
+				<optgroup label="<?php esc_attr_e( 'A kind of post', 'eightam-og-image' ); ?>">
+					<?php foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $type ) : ?>
+						<?php
+						if ( 'attachment' === $type->name || 'page' === $type->name ) {
+							continue;
+						}
+						?>
+						<option value="<?php echo esc_attr( 'type:' . $type->name ); ?>" <?php selected( $target, 'type:' . $type->name ); ?>><?php echo esc_html( (string) $type->labels->name ); ?></option>
+					<?php endforeach; ?>
+				</optgroup>
+			</select>
+		</label>
+		<label>
+			<span><?php esc_html_e( 'Template', 'eightam-og-image' ); ?></span>
+			<select name="<?php echo esc_attr( $name . '[template]' ); ?>">
+				<option value=""><?php esc_html_e( 'As above', 'eightam-og-image' ); ?></option>
+				<?php foreach ( Templates\all() as $slug => $template ) : ?>
+					<option value="<?php echo esc_attr( $slug ); ?>" <?php selected( (string) ( $variant['template'] ?? '' ), $slug ); ?>><?php echo esc_html( $template['label'] ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</label>
+		<label>
+			<span><?php esc_html_e( 'Logo', 'eightam-og-image' ); ?></span>
+			<?php
+			image_field(
+				$name . '[logo]',
+				(int) ( $variant['logo'] ?? -2 ),
+				array(
+					-2 => __( 'As above', 'eightam-og-image' ),
+					0  => __( 'The page’s own', 'eightam-og-image' ),
+					-1 => __( 'None', 'eightam-og-image' ),
+				),
+				0
+			);
+			?>
+		</label>
+		<label>
+			<span><?php esc_html_e( 'Background', 'eightam-og-image' ); ?></span>
+			<input type="text" class="eightam-og__color" name="<?php echo esc_attr( $name . '[background]' ); ?>" value="<?php echo esc_attr( (string) ( $variant['background'] ?? '' ) ); ?>" />
+		</label>
+		<label>
+			<span><?php esc_html_e( 'Accent', 'eightam-og-image' ); ?></span>
+			<input type="text" class="eightam-og__color" name="<?php echo esc_attr( $name . '[accent]' ); ?>" value="<?php echo esc_attr( (string) ( $variant['accent'] ?? '' ) ); ?>" />
+		</label>
+		<button type="button" class="button-link button-link-delete eightam-og__remove"><?php esc_html_e( 'Remove', 'eightam-og-image' ); ?></button>
+	</fieldset>
+	<?php
+}
+
+/**
+ * What the settings page's browser is asked to prepare: the SVG logos the
+ * site may show, drawn to PNG, and the WOFF2 files of the typefaces in use,
+ * unpacked. Neither can the server do with PHP alone.
+ *
+ * @return array<int,array<string,mixed>>
+ */
+function jobs(): array {
+	$s     = settings();
+	$brand = Brand\get();
+	$ids   = array_merge( Brand\all_logos(), array( (int) $s['logo'], (int) $s['mark'], (int) $brand['icon'] ) );
+	foreach ( (array) $s['variants'] as $variant ) {
+		$ids[] = (int) ( $variant['logo'] ?? 0 );
+	}
+	$jobs = array();
+	foreach ( Templates\svgs_to_draw( array_filter( $ids, static fn( int $id ): bool => $id > 0 ) ) as $svg ) {
+		$jobs[] = array( 'kind' => 'logo' ) + $svg;
+	}
+	$families = array(
+		'' !== (string) $s['title_font'] ? (string) $s['title_font'] : (string) $brand['fonts']['heading']['family'],
+		'' !== (string) $s['text_font'] ? (string) $s['text_font'] : (string) $brand['fonts']['body']['family'],
+	);
+	foreach ( Fonts\to_unpack( (array) $brand['families'], $families ) as $url ) {
+		$jobs[] = array(
+			'kind' => 'font',
+			'url'  => $url,
+		);
+	}
+	return $jobs;
 }
 
 /**

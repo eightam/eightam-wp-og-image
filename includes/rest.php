@@ -98,6 +98,76 @@ function sample_route(): void {
 }
 add_action( 'rest_api_init', __NAMESPACE__ . '\\sample_route' );
 
+add_action( 'rest_api_init', __NAMESPACE__ . '\\convert_route' );
+/**
+ * The route the settings page sends what the browser made to: a PNG of an
+ * SVG logo, which GD cannot read, and the TrueType font inside a WOFF2 file,
+ * which PHP cannot unpack. Both are checked and made again here before they
+ * are kept.
+ *
+ *     POST /wp-json/eightam-og-image/v1/convert  { kind: logo, id, data }
+ *     POST /wp-json/eightam-og-image/v1/convert  { kind: font, url, data }
+ */
+function convert_route(): void {
+	register_rest_route(
+		ROUTE,
+		'/convert',
+		array(
+			'methods'             => \WP_REST_Server::CREATABLE,
+			'callback'            => __NAMESPACE__ . '\\convert',
+			'permission_callback' => static fn(): bool => current_user_can( 'manage_options' ),
+			'args'                => array(
+				'kind' => array(
+					'type'     => 'string',
+					'enum'     => array( 'logo', 'font' ),
+					'required' => true,
+				),
+				'id'   => array(
+					'type'    => 'integer',
+					'default' => 0,
+				),
+				'url'  => array(
+					'type'    => 'string',
+					'default' => '',
+				),
+				// Base64, at most 8 MB of it.
+				'data' => array(
+					'type'      => 'string',
+					'required'  => true,
+					'maxLength' => 8 * 1024 * 1024,
+				),
+			),
+		)
+	);
+}
+
+/**
+ * Keep what the browser made.
+ *
+ * @param \WP_REST_Request $request Request.
+ * @return \WP_REST_Response|\WP_Error
+ */
+function convert( \WP_REST_Request $request ) {
+	$data = base64_decode( (string) preg_replace( '#^data:[^,]*,#', '', (string) $request['data'] ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- bytes the browser sent.
+	if ( false === $data || '' === $data ) {
+		return new \WP_Error( 'eightam_og_image_data', 'No data.', array( 'status' => 400 ) );
+	}
+
+	if ( 'logo' === $request['kind'] ) {
+		$id = (int) $request['id'];
+		if ( ! current_user_can( 'read_post', $id ) || ! Templates\logo_png( $id, $data ) ) {
+			return new \WP_Error( 'eightam_og_image_logo', 'That logo could not be kept.', array( 'status' => 400 ) );
+		}
+		return new \WP_REST_Response( array( 'kept' => true ) );
+	}
+
+	$file = Brand\font_path( (string) $request['url'] );
+	if ( '' === $file || ! preg_match( '/\.woff2$/i', $file ) || ! Fonts\keep_unpacked( $file, $data ) ) {
+		return new \WP_Error( 'eightam_og_image_font', 'That font could not be kept.', array( 'status' => 400 ) );
+	}
+	return new \WP_REST_Response( array( 'kept' => true ) );
+}
+
 /**
  * Draw a sample.
  *
@@ -110,10 +180,10 @@ function sample( \WP_REST_Request $request ) {
 	}
 	$given = json_decode( (string) $request['settings'], true );
 	$given = is_array( $given ) ? $given : settings();
-	if ( '' !== (string) $request['template'] ) {
-		$given['template'] = (string) $request['template'];
-	}
 	settings( $given );
+	if ( isset( Templates\all()[ (string) $request['template'] ] ) ) {
+		forced_template( (string) $request['template'] );
+	}
 
 	try {
 		$post = (int) $request['post'] > 0 ? get_post( (int) $request['post'] ) : null;
@@ -140,6 +210,7 @@ function sample( \WP_REST_Request $request ) {
 		$image = image( $card, $style );
 	} finally {
 		settings( array() );
+		forced_template( '' );
 	}
 
 	$width = max( 300, min( Template\WIDTH, (int) $request['width'] ) );

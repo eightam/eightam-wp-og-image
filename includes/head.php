@@ -75,25 +75,15 @@ function tags(): array {
 		$url     = (string) wp_get_canonical_url( $post );
 		$url     = '' !== $url ? $url : (string) get_permalink( $post );
 		$type    = $front || 'page' === $post->post_type || (int) get_option( 'page_for_posts' ) === $post->ID ? 'website' : 'article';
-		$image   = post_image( $post );
 		$summary = description( $post );
 	} else {
-		[ $card, $key, $subject ] = screen_card();
-		$title                    = $subject ? str_replace( "\n", ' ', $card['title'] ) : (string) get_bloginfo( 'name' );
-		$url                      = screen_url( $subject );
-		$type                     = 'website';
-		$style                    = style( $card, $subject );
-		$drawn                    = Canvas\available() && can_draw( $style ) ? card_image( $key, $card, $style, true ) : null;
-		$image                    = $drawn ? array(
-			'url'    => $drawn['url'],
-			'width'  => $drawn['width'],
-			'height' => $drawn['height'],
-			'type'   => $drawn['type'],
-			'alt'    => alt( $card ),
-			'card'   => true,
-		) : null;
-		$summary                  = description( $subject );
+		[ $card, , $subject ] = screen_card();
+		$title                = $subject ? str_replace( "\n", ' ', $card['title'] ) : (string) get_bloginfo( 'name' );
+		$url                  = screen_url( $subject );
+		$type                 = 'website';
+		$summary              = description( $subject );
 	}
+	$image = screen_image();
 
 	$tags = array(
 		array( 'property', 'og:type', $type ),
@@ -141,6 +131,35 @@ function tags(): array {
 			static fn( $tag ): bool => is_array( $tag ) && 3 === count( $tag ) && '' !== (string) $tag[2]
 		)
 	);
+}
+
+/**
+ * The share image of the screen being viewed: a post's (its own image, its
+ * card, or its featured image), or the card of an archive, a term or the
+ * site. Worked out once a request.
+ *
+ * @return array{url:string,width:int,height:int,type:string,alt:string,card?:bool}|null
+ */
+function screen_image(): ?array {
+	static $image = false;
+	if ( false !== $image ) {
+		return $image;
+	}
+	$subject = get_queried_object();
+	if ( $subject instanceof \WP_Post ) {
+		return $image = post_image( $subject ); // phpcs:ignore Squiz.PHP.DisallowMultipleAssignments
+	}
+	[ $card, $key, $subject ] = screen_card();
+	$style                    = style( $card, $subject );
+	$drawn                    = Canvas\available() && can_draw( $style ) ? card_image( $key, $card, $style, true ) : null;
+	return $image = $drawn ? array( // phpcs:ignore Squiz.PHP.DisallowMultipleAssignments
+		'url'    => $drawn['url'],
+		'width'  => $drawn['width'],
+		'height' => $drawn['height'],
+		'type'   => $drawn['type'],
+		'alt'    => alt( $card ),
+		'card'   => true,
+	) : null;
 }
 
 /**

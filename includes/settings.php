@@ -59,6 +59,7 @@ function default_settings(): array {
 		'text_font'    => '',
 		'text_weight'  => 0,
 		'logo'         => 0,
+		'logo_size'    => 'medium',
 		'logo_tab'     => 'auto',
 		'mark'         => -1,
 		'kicker'       => 'none',
@@ -68,6 +69,7 @@ function default_settings(): array {
 		'post_types'   => array(),
 		'google_fonts' => true,
 		'print'        => 'auto',
+		'variants'     => array(),
 	);
 }
 
@@ -102,7 +104,8 @@ function sanitize_settings( $input ): array {
 	foreach ( array( 'logo', 'mark' ) as $key ) {
 		$out[ $key ] = max( -1, (int) ( $input[ $key ] ?? $out[ $key ] ) );
 	}
-	$out['logo_tab'] = $pick( 'logo_tab', array( 'auto', 'on', 'off' ) );
+	$out['logo_tab']  = $pick( 'logo_tab', array( 'auto', 'on', 'off' ) );
+	$out['logo_size'] = $pick( 'logo_size', array( 'small', 'medium', 'large' ) );
 	$out['kicker']   = $pick( 'kicker', array( 'none', 'type', 'term' ) );
 	$out['subtitle'] = $pick( 'subtitle', array( 'none', 'date', 'author', 'author_date', 'excerpt' ) );
 	$out['meta']     = $pick( 'meta', array( 'host', 'name', 'none' ) );
@@ -114,12 +117,119 @@ function sanitize_settings( $input ): array {
 		$out[ $key ] = ! empty( $input[ $key ] ) && 'false' !== $input[ $key ];
 	}
 
+	$out['variants'] = array();
+	foreach ( is_array( $input['variants'] ?? null ) ? array_values( $input['variants'] ) : array() as $variant ) {
+		$variant = sanitize_variant( (array) $variant, array_keys( Templates\all() ) );
+		if ( $variant ) {
+			$out['variants'][] = $variant;
+		}
+	}
+	$out['variants'] = array_slice( $out['variants'], 0, 20 );
+
 	$public            = array_diff( get_post_types( array( 'public' => true ) ), array( 'attachment' ) );
 	$out['post_types'] = array_values( array_intersect( array_map( 'strval', (array) ( $input['post_types'] ?? array() ) ), $public ) );
 	if ( count( $out['post_types'] ) === count( $public ) ) {
 		$out['post_types'] = array();
 	}
 	return $out;
+}
+
+/**
+ * A variant as it may be stored, or null for one that names nothing.
+ *
+ * A variant is what a part of the site draws differently: `target` is a page
+ * (`page:12`, the page and every page under it) or a kind of post
+ * (`type:event`, its posts and its archive); `template`, `logo`, `background`
+ * and `accent` replace the settings' where they are set ('' and -2 mean "as
+ * the rest of the site").
+ *
+ * @param array<string,mixed> $variant   A variant from the form.
+ * @param string[]            $templates The templates there are.
+ * @return array<string,mixed>|null
+ */
+function sanitize_variant( array $variant, array $templates ): ?array {
+	$target = (string) ( $variant['target'] ?? '' );
+	if ( ! preg_match( '/^(page:\d+|type:[a-z0-9_-]+)$/', $target ) ) {
+		return null;
+	}
+	$template = (string) ( $variant['template'] ?? '' );
+	return array(
+		'target'     => $target,
+		'template'   => in_array( $template, $templates, true ) ? $template : '',
+		'logo'       => max( -2, (int) ( $variant['logo'] ?? -2 ) ),
+		'background' => Brand\hex( (string) ( $variant['background'] ?? '' ) ),
+		'accent'     => Brand\hex( (string) ( $variant['accent'] ?? '' ) ),
+	);
+}
+
+/**
+ * The settings a card is drawn with: the site's, with the first variant
+ * whose target the card is of laid over them.
+ *
+ * @param mixed $subject What the card is of.
+ * @return array<string,mixed>
+ */
+function settings_for( $subject ): array {
+	$settings = settings();
+	$variant  = variant_for( $subject, (array) $settings['variants'] );
+	if ( $variant ) {
+		foreach ( array( 'template', 'background', 'accent' ) as $key ) {
+			if ( '' !== $variant[ $key ] ) {
+				$settings[ $key ] = $variant[ $key ];
+			}
+		}
+		if ( -2 !== (int) $variant['logo'] ) {
+			$settings['logo'] = (int) $variant['logo'];
+		}
+	}
+	$forced = forced_template();
+	if ( '' !== $forced ) {
+		$settings['template'] = $forced;
+	}
+	return $settings;
+}
+
+/**
+ * The variant a card is drawn in, or null.
+ *
+ * @param mixed                          $subject  What the card is of.
+ * @param array<int,array<string,mixed>> $variants Variants, in order.
+ * @return array<string,mixed>|null
+ */
+function variant_for( $subject, array $variants ): ?array {
+	$type      = '';
+	$ancestors = array();
+	if ( $subject instanceof \WP_Post ) {
+		$type      = $subject->post_type;
+		$ancestors = array_map( 'intval', array_merge( array( $subject->ID ), get_post_ancestors( $subject ) ) );
+	} elseif ( $subject instanceof \WP_Post_Type ) {
+		$type = $subject->name;
+	}
+	foreach ( $variants as $variant ) {
+		$target = (string) ( $variant['target'] ?? '' );
+		if ( str_starts_with( $target, 'page:' ) && in_array( (int) substr( $target, 5 ), $ancestors, true ) ) {
+			return $variant;
+		}
+		if ( '' !== $type && 'type:' . $type === $target ) {
+			return $variant;
+		}
+	}
+	return null;
+}
+
+/**
+ * A template every card is drawn in for now, whatever its variant: the
+ * settings page's thumbnails show each template so.
+ *
+ * @param string|null $template A template to force, '' to stop, or null to
+ *                              ask.
+ */
+function forced_template( ?string $template = null ): string {
+	static $forced = '';
+	if ( null !== $template ) {
+		$forced = $template;
+	}
+	return $forced;
 }
 
 add_action( 'init', __NAMESPACE__ . '\\register_settings' );

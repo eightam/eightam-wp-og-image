@@ -100,6 +100,30 @@ function blocksy(): array {
 	$root    = typography( (array) get_theme_mod( 'rootTypography', array() ), 'System Default', 400 );
 	$heading = typography( (array) get_theme_mod( 'h1Typography', array() ), $root['family'], 700 );
 
+	// A font uploaded through Blocksy Pro's Custom Fonts is named by an ID
+	// (ct_font_rebond__revista); its name and files are in the extension's
+	// settings.
+	$custom   = blocksy_custom_fonts();
+	$families = array();
+	foreach ( array( 'heading', 'body' ) as $role ) {
+		$font = 'heading' === $role ? $heading : $root;
+		if ( isset( $custom[ $font['family'] ] ) ) {
+			$font['sources'] = $custom[ $font['family'] ]['sources'];
+			$font['family']  = $custom[ $font['family'] ]['name'];
+		}
+		if ( '' !== \Eightam\OgImage\Fonts\clean( $font['family'] ) ) {
+			$families[ $font['family'] ] = $font['sources'];
+		}
+		if ( 'heading' === $role ) {
+			$heading = $font;
+		} else {
+			$root = $font;
+		}
+	}
+	foreach ( $custom as $font ) {
+		$families[ $font['name'] ] = $font['sources'];
+	}
+
 	return array(
 		'source'   => 'blocksy',
 		'label'    => 'Blocksy',
@@ -109,16 +133,197 @@ function blocksy(): array {
 			'heading'    => $colors['color4'],
 			'accent'     => $colors['color1'],
 			'accent2'    => $colors['color2'],
-			'light'      => $colors['color6'],
-			'dark'       => darkest( array( $colors['color4'], $colors['color3'] ) ),
+			// The sixth is Blocksy's light background, but a palette may make
+			// it anything; the lightest of the light slots where it is not.
+			'light'      => light( array( $colors['color6'], $colors['color5'], $colors['color7'], $colors['color8'] ) ),
+			'dark'       => dark( array( $colors['color4'], $colors['color3'], $colors['color1'], $colors['color2'] ) ),
 		),
 		'palette'  => $palette,
 		'fonts'    => array(
 			'heading' => $heading,
 			'body'    => $root,
 		),
-		'families' => array_fill_keys( array_filter( array_unique( array( $heading['family'], $root['family'] ) ) ), array() ),
+		'families' => $families,
 	);
+}
+
+/**
+ * The fonts uploaded through Blocksy Pro's Custom Fonts, by the ID Blocksy
+ * names them by: their name and their files.
+ *
+ * @return array<string,array{name:string,sources:array<int,array<string,string>>}>
+ */
+function blocksy_custom_fonts(): array {
+	$settings = get_option( 'blocksy_ext_custom_fonts_settings', array() );
+	$out      = array();
+	foreach ( is_array( $settings ) ? (array) ( $settings['fonts'] ?? array() ) : array() as $font ) {
+		$name = trim( (string) ( $font['name'] ?? '' ) );
+		if ( '' === $name ) {
+			continue;
+		}
+		// As Blocksy makes the ID from the name.
+		$id       = str_replace( ' ', '_', 'ct_font_' . strtolower( (string) preg_replace( '/(?<!^)[A-Z]/', '_$0', $name ) ) );
+		$variable = 'variable' === ( $font['fontType'] ?? '' );
+		$sources  = array();
+		foreach ( (array) ( $font['variations'] ?? array() ) as $variation ) {
+			// The attachment, or the address where it is gone: a site copied
+			// from another keeps the addresses, not always the attachments.
+			$attachment = (int) ( $variation['attachment_id'] ?? 0 );
+			$file       = $attachment ? (string) get_attached_file( $attachment ) : '';
+			if ( '' === $file || ! is_readable( $file ) ) {
+				$attachment = 0;
+				$file       = font_path( (string) ( $variation['url'] ?? '' ) );
+			}
+			if ( '' === $file ) {
+				continue;
+			}
+			$code      = (string) ( $variation['variation'] ?? 'n4' );
+			$sources[] = array(
+				'file'   => $file,
+				'url'    => $attachment ? (string) wp_get_attachment_url( $attachment ) : (string) ( $variation['url'] ?? '' ),
+				'weight' => $variable ? '100 900' : (string) ( 100 * max( 1, min( 9, (int) substr( $code, 1, 1 ) ?: 4 ) ) ),
+				'style'  => str_starts_with( $code, 'i' ) ? 'italic' : 'normal',
+			);
+		}
+		$out[ $id ] = array(
+			'name'    => $name,
+			'sources' => $sources,
+		);
+	}
+	return $out;
+}
+
+/**
+ * The logo Blocksy shows on a page. Blocksy Pro can give a page a header of
+ * its own, chosen by display conditions on the request, each with its own
+ * logo; the conditions are asked as if the page were being viewed. Without
+ * one, or without Blocksy Pro, the header's logo, else the site's.
+ *
+ * @param mixed $subject What the card is of.
+ */
+function blocksy_logo( $subject ): int {
+	static $logos = array();
+
+	$placements = get_theme_mod( 'header_placements' );
+	$sections   = is_array( $placements ) ? (array) ( $placements['sections'] ?? array() ) : array();
+	if ( ! $sections ) {
+		return 0;
+	}
+
+	$key = $subject instanceof \WP_Post ? 'post-' . $subject->ID : 'default';
+	if ( isset( $logos[ $key ] ) ) {
+		return $logos[ $key ];
+	}
+
+	$section_id = 'type-1';
+	if ( $subject instanceof \WP_Post && has_filter( 'blocksy:header:current_section_id' ) ) {
+		$section_id = (string) as_viewed(
+			$subject,
+			static fn() => apply_filters( 'blocksy:header:current_section_id', 'type-1', $placements )
+		);
+	}
+
+	$logo = 0;
+	foreach ( $sections as $section ) {
+		if ( ( $section['id'] ?? '' ) !== $section_id ) {
+			continue;
+		}
+		foreach ( (array) ( $section['items'] ?? array() ) as $item ) {
+			if ( ! str_starts_with( (string) ( $item['id'] ?? '' ), 'logo' ) ) {
+				continue;
+			}
+			$value = $item['values']['custom_logo'] ?? 0;
+			if ( is_array( $value ) ) {
+				$value = $value['desktop'] ?? $value['attachment_id'] ?? reset( $value );
+				$value = is_array( $value ) ? ( $value['attachment_id'] ?? 0 ) : $value;
+			}
+			$logo = (int) $value;
+			break 2;
+		}
+	}
+	return $logos[ $key ] = $logo; // phpcs:ignore Squiz.PHP.DisallowMultipleAssignments
+}
+
+/**
+ * Run something as if a post were the page being viewed: the main query, the
+ * global post. A theme's display conditions ask those.
+ *
+ * @param \WP_Post $post     The post.
+ * @param callable $callback What to run.
+ * @return mixed What it returned.
+ */
+function as_viewed( \WP_Post $post, callable $callback ) {
+	global $wp_query, $wp_the_query;
+	$saved = array( $wp_query, $wp_the_query, $GLOBALS['post'] ?? null );
+
+	$query        = new \WP_Query(
+		'page' === $post->post_type
+			? array( 'page_id' => $post->ID )
+			: array(
+				'p'         => $post->ID,
+				'post_type' => $post->post_type,
+			)
+	);
+	$wp_query     = $query; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+	$wp_the_query = $query; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+	$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+	setup_postdata( $post );
+	try {
+		return $callback();
+	} catch ( \Throwable $error ) {
+		return null;
+	} finally {
+		[ $wp_query, $wp_the_query, $GLOBALS['post'] ] = $saved; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		if ( $GLOBALS['post'] instanceof \WP_Post ) {
+			setup_postdata( $GLOBALS['post'] );
+		}
+	}
+}
+
+/**
+ * The logo the site shows on a page: Blocksy's for that page, else the
+ * site's custom logo.
+ *
+ * @param mixed $subject What the card is of.
+ */
+function logo( $subject ): int {
+	$logo = is_blocksy() ? blocksy_logo( $subject ) : 0;
+	$logo = $logo ?: (int) get_theme_mod( 'custom_logo', 0 );
+
+	/**
+	 * The logo the site shows on the page a card is of.
+	 *
+	 * @param int                                  $logo    Attachment ID, or 0.
+	 * @param \WP_Post|\WP_Post_Type|\WP_Term|null $subject What the card is of.
+	 */
+	return (int) apply_filters( 'eightam_og_image_logo', $logo, $subject );
+}
+
+/**
+ * Every logo the site may show, for the settings page to prepare: the custom
+ * logo and each of Blocksy's headers'.
+ *
+ * @return int[] Attachment IDs.
+ */
+function all_logos(): array {
+	$logos      = array( (int) get_theme_mod( 'custom_logo', 0 ) );
+	$placements = get_theme_mod( 'header_placements' );
+	foreach ( is_array( $placements ) ? (array) ( $placements['sections'] ?? array() ) : array() as $section ) {
+		foreach ( (array) ( $section['items'] ?? array() ) as $item ) {
+			if ( str_starts_with( (string) ( $item['id'] ?? '' ), 'logo' ) ) {
+				$values = (array) ( $item['values'] ?? array() );
+				array_walk_recursive(
+					$values,
+					static function ( $value, $key ) use ( &$logos ): void {
+						if ( in_array( $key, array( 'custom_logo', 'attachment_id', 'desktop' ), true ) && is_numeric( $value ) ) {
+							$logos[] = (int) $value;
+						}
+					}
+				);
+			}
+		}
+	}
+	return array_values( array_unique( array_filter( $logos ) ) );
 }
 
 /**
@@ -226,6 +431,7 @@ function theme_json(): array {
 				if ( '' !== $file ) {
 					$sources[] = array(
 						'file'   => $file,
+						'url'    => str_starts_with( (string) $src, 'file:./' ) ? get_theme_file_uri( substr( (string) $src, 7 ) ) : (string) $src,
 						'weight' => (string) ( $face['fontWeight'] ?? '400' ),
 						'style'  => (string) ( $face['fontStyle'] ?? 'normal' ),
 					);
@@ -257,8 +463,8 @@ function theme_json(): array {
 			'heading'    => $heading,
 			'accent'     => $accent,
 			'accent2'    => $accent2,
-			'light'      => lightest( array( $background, $slug( array( 'base-2', 'accent-5', 'tertiary', 'light' ) ) ) ),
-			'dark'       => darkest( array( $heading, $text, $slug( array( 'contrast', 'contrast-2', 'black', 'dark' ) ) ) ),
+			'light'      => light( array( $background, $slug( array( 'base-2', 'accent-5', 'tertiary', 'light' ) ), '#ffffff' ) ),
+			'dark'       => dark( array( $heading, $text, $slug( array( 'contrast', 'contrast-2', 'black', 'dark' ) ), '#161616' ) ),
 		),
 		'palette'  => $palette,
 		'fonts'    => array(
@@ -357,23 +563,69 @@ function font_path( string $src ): string {
 }
 
 /**
- * A colour as #rrggbb, from #rgb, #rrggbb, #rrggbbaa or rgb(); '' for what
- * is not one.
+ * A colour as #rrggbb, from #rgb, #rrggbb, #rrggbbaa, rgb() or rgba(); ''
+ * for what is not one. A translucent colour is laid over white, as it shows
+ * on a light page: Blocksy's lighter palette colours are often a wash of the
+ * accent, such as rgba(0, 161, 67, .09).
  *
  * @param string $value Colour.
  */
 function hex( string $value ): string {
 	$value = strtolower( trim( $value ) );
+	$alpha = 1.0;
 	if ( preg_match( '/^#([0-9a-f]{3})$/', $value, $m ) ) {
 		return '#' . $m[1][0] . $m[1][0] . $m[1][1] . $m[1][1] . $m[1][2] . $m[1][2];
 	}
-	if ( preg_match( '/^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/', $value, $m ) ) {
-		return '#' . $m[1];
+	if ( preg_match( '/^#([0-9a-f]{6})([0-9a-f]{2})?$/', $value, $m ) ) {
+		$rgb   = array( (int) hexdec( substr( $m[1], 0, 2 ) ), (int) hexdec( substr( $m[1], 2, 2 ) ), (int) hexdec( substr( $m[1], 4, 2 ) ) );
+		$alpha = isset( $m[2] ) ? hexdec( $m[2] ) / 255 : 1.0;
+	} elseif ( preg_match( '/^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})(?:\s*[,\/]\s*([\d.]+)(%)?)?/', $value, $m ) ) {
+		$rgb = array( min( 255, (int) $m[1] ), min( 255, (int) $m[2] ), min( 255, (int) $m[3] ) );
+		if ( isset( $m[4] ) && '' !== $m[4] ) {
+			$alpha = (float) $m[4] / ( isset( $m[5] ) ? 100 : 1 );
+		}
+	} else {
+		return '';
 	}
-	if ( preg_match( '/^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/', $value, $m ) ) {
-		return sprintf( '#%02x%02x%02x', min( 255, (int) $m[1] ), min( 255, (int) $m[2] ), min( 255, (int) $m[3] ) );
+	$alpha = max( 0.0, min( 1.0, $alpha ) );
+	return sprintf(
+		'#%02x%02x%02x',
+		(int) round( 255 + ( $rgb[0] - 255 ) * $alpha ),
+		(int) round( 255 + ( $rgb[1] - 255 ) * $alpha ),
+		(int) round( 255 + ( $rgb[2] - 255 ) * $alpha )
+	);
+}
+
+/**
+ * Of some colours, the first light enough to be a card's background, else
+ * the lightest.
+ *
+ * @param string[] $colors Colours, in order of preference.
+ */
+function light( array $colors ): string {
+	foreach ( $colors as $color ) {
+		$color = hex( (string) $color );
+		if ( '' !== $color && luminance( $color ) >= 0.75 ) {
+			return $color;
+		}
 	}
-	return '';
+	return lightest( $colors );
+}
+
+/**
+ * Of some colours, the first dark enough to be a card's background, else the
+ * darkest.
+ *
+ * @param string[] $colors Colours, in order of preference.
+ */
+function dark( array $colors ): string {
+	foreach ( $colors as $color ) {
+		$color = hex( (string) $color );
+		if ( '' !== $color && luminance( $color ) <= 0.04 ) {
+			return $color;
+		}
+	}
+	return darkest( $colors );
 }
 
 /**
