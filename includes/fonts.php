@@ -10,7 +10,7 @@
  *    or WOFF, static, and of the weight wanted;
  * 2. on Google Fonts, which serves a static TrueType cut of any weight of its
  *    families: fetched once, by the server, never by a reader's browser;
- * 3. among the plugin's own, Inter, in assets/fonts/;
+ * 3. among the plugin's own, Plus Jakarta Sans, in assets/fonts/;
  * 4. among the server's (includes/card.php, system_font()).
  *
  * Each file found is made fit for GD (includes/sfnt.php: kerning written
@@ -74,7 +74,7 @@ function find( string $family, int $weight, bool $italic = false, array $sources
 	if ( '' === $family ) {
 		return $none;
 	}
-	if ( 'inter' === strtolower( $family ) ) {
+	if ( 'plus jakarta sans' === strtolower( $family ) ) {
 		return bundled( $weight );
 	}
 
@@ -113,14 +113,15 @@ function find( string $family, int $weight, bool $italic = false, array $sources
 }
 
 /**
- * The plugin's own typeface, Inter, at the nearest weight it carries.
+ * The plugin's own typeface, Plus Jakarta Sans, at the nearest weight it
+ * carries.
  *
  * @param int $weight Weight.
  * @return array{file:string,source:string}
  */
 function bundled( int $weight ): array {
 	$cut  = $weight >= 600 ? 'Bold' : 'Medium';
-	$file = dirname( __DIR__ ) . '/assets/fonts/Inter-' . $cut . '.ttf';
+	$file = dirname( __DIR__ ) . '/assets/fonts/PlusJakartaSans-' . $cut . '.ttf';
 	return array(
 		'file'   => is_readable( $file ) ? $file : '',
 		'source' => is_readable( $file ) ? 'bundled' : '',

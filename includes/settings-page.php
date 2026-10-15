@@ -103,7 +103,7 @@ function page(): void {
 	$sources = array(
 		'theme'   => __( 'from the theme', 'eightam-og-image' ),
 		'google'  => __( 'from Google Fonts', 'eightam-og-image' ),
-		'bundled' => __( 'Inter, the plugin’s own', 'eightam-og-image' ),
+		'bundled' => __( 'Plus Jakarta Sans, the plugin’s own', 'eightam-og-image' ),
 		''        => __( 'the server’s', 'eightam-og-image' ),
 	);
 	$weights = array(
@@ -182,7 +182,7 @@ function page(): void {
 				<h2><?php esc_html_e( 'Typefaces', 'eightam-og-image' ); ?></h2>
 				<p class="description"><?php esc_html_e( 'A family the theme has, or any family on Google Fonts, fetched once by this server and kept in uploads. Leave it empty to use the theme’s.', 'eightam-og-image' ); ?></p>
 				<datalist id="eightam-og-families">
-					<?php foreach ( array_unique( array_merge( array_keys( (array) $brand['families'] ), array( 'Inter' ) ) ) as $family ) : ?>
+					<?php foreach ( array_unique( array_merge( array_keys( (array) $brand['families'] ), array( 'Plus Jakarta Sans' ) ) ) as $family ) : ?>
 						<option value="<?php echo esc_attr( (string) $family ); ?>"></option>
 					<?php endforeach; ?>
 				</datalist>
@@ -198,7 +198,7 @@ function page(): void {
 						<tr>
 							<th scope="row"><label for="eightam-og-<?php echo esc_attr( $role ); ?>-font"><?php echo esc_html( $label ); ?></label></th>
 							<td>
-								<input type="text" list="eightam-og-families" class="regular-text" id="eightam-og-<?php echo esc_attr( $role ); ?>-font" name="<?php echo esc_attr( $name( $role . '_font' ) ); ?>" value="<?php echo esc_attr( (string) $s[ $role . '_font' ] ); ?>" placeholder="<?php echo esc_attr( '' !== (string) $theme['family'] ? (string) $theme['family'] : 'Inter' ); ?>" />
+								<input type="text" list="eightam-og-families" class="regular-text" id="eightam-og-<?php echo esc_attr( $role ); ?>-font" name="<?php echo esc_attr( $name( $role . '_font' ) ); ?>" value="<?php echo esc_attr( (string) $s[ $role . '_font' ] ); ?>" placeholder="<?php echo esc_attr( '' !== (string) $theme['family'] ? (string) $theme['family'] : 'Plus Jakarta Sans' ); ?>" />
 								<select name="<?php echo esc_attr( $name( $role . '_weight' ) ); ?>" aria-label="<?php esc_attr_e( 'Weight', 'eightam-og-image' ); ?>">
 									<?php foreach ( $weights as $weight => $weight_label ) : ?>
 										<option value="<?php echo esc_attr( (string) $weight ); ?>" <?php selected( (int) $s[ $role . '_weight' ], $weight ); ?>><?php echo esc_html( $weight_label ); ?></option>

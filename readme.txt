@@ -4,7 +4,7 @@ Tags: open graph, og:image, social sharing, share image, twitter card
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 
 A share image for every page, drawn from one template: the logo, the title, a bar of colour and the featured image, or the page's first picture without one. Drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it.
@@ -43,7 +43,7 @@ A link shared on WhatsApp, Signal, Facebook, LinkedIn, Slack or X shows the pict
 
 = Typefaces =
 
-GD draws type from one TrueType or OpenType file, at a variable font's default weight only, and kerns only from a legacy `kern` table. So a family is looked for, in order: in the theme's own files, if one is TrueType, OpenType or WOFF, static, and of the weight wanted; on Google Fonts, which serves a static cut of any weight of its families, fetched once by the server and kept in `uploads/eightam-og-image/fonts/` (readers' browsers never ask Google for anything); then Inter, which the plugin carries; then the server's own. Each file is given a `kern` table written from its GPOS kerning, in PHP, once.
+GD draws type from one TrueType or OpenType file, at a variable font's default weight only, and kerns only from a legacy `kern` table. So a family is looked for, in order: in the theme's own files, if one is TrueType, OpenType or WOFF, static, and of the weight wanted; on Google Fonts, which serves a static cut of any weight of its families, fetched once by the server and kept in `uploads/eightam-og-image/fonts/` (readers' browsers never ask Google for anything); then Plus Jakarta Sans, which the plugin carries; then the server's own. Each file is given a `kern` table written from its GPOS kerning, in PHP, once.
 
 = What a card says =
 
@@ -86,7 +86,7 @@ GD reads neither SVG nor, reliably, WOFF2, so:
 * **Fonts** are TrueType or OpenType files, and static: GD draws a variable font at its default instance only. It kerns only from a legacy `kern` table, not from GPOS; a font without one is set unkerned. Cut a static instance with a `kern` table from a variable font with fontTools (`fontTools.varLib.instancer`, then write the GPOS pairs into `kern`).
 * **Logos and marks** are PNG files, about twice the size the card shows them.
 
-Without a font it can read, the plugin uses Inter, and then the server's own (DejaVu Sans, Liberation Sans, FreeSans, Noto Sans; `eightam_og_image_system_fonts`). Without GD's FreeType, or without any font, no card is drawn, links show the featured image, and administrators are told on the dashboard.
+Without a font it can read, the plugin uses Plus Jakarta Sans, and then the server's own (DejaVu Sans, Liberation Sans, FreeSans, Noto Sans; `eightam_og_image_system_fonts`). Without GD's FreeType, or without any font, no card is drawn, links show the featured image, and administrators are told on the dashboard.
 
 = Other filters =
 
@@ -133,6 +133,9 @@ GD is on every server WordPress runs on, and draws a card in a tenth of a second
 In the editor: "Words on the card" in the Share image panel. In code: `eightam_og_image_card`.
 
 == Changelog ==
+
+= 1.2.1 =
+* The typeface the plugin carries, for a site whose own cannot be found, is Plus Jakarta Sans instead of Inter; the plugin is 0.56 MB lighter.
 
 = 1.2.0 =
 * Updates from GitHub: the Plugins screen offers each new release of github.com/eightam/eightam-wp-og-image, and automatic updates work when they are turned on. The header's `Update URI` keeps WordPress.org from offering another plugin of the same name.
