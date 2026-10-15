@@ -1,0 +1,95 @@
+# A release for every new version.
+#
+# On every push to main, the version in the plugin's header is compared with
+# the newest release tag. When it is higher, the plugin is checked, packed as
+# eightam-og-image.zip (a folder named eightam-og-image, without what
+# .gitattributes marks export-ignore) and published as release v{version},
+# with that version's changelog from readme.txt as its notes. Sites running
+# the plugin find it there (includes/updater.php).
+#
+# The header's Version, the VERSION constant and the readme's Stable tag must
+# agree, or the run fails.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version
+        id: version
+        run: |
+          header=$(sed -n 's/^ \* Version: *//p' eightam-og-image.php | tr -d '[:space:]')
+          constant=$(sed -n "s/^const VERSION = '\([^']*\)';/\1/p" eightam-og-image.php)
+          stable=$(sed -n 's/^Stable tag: *//p' readme.txt | tr -d '[:space:]')
+          echo "Header $header, constant $constant, stable tag $stable"
+          if [ -z "$header" ] || [ "$header" != "$constant" ] || [ "$header" != "$stable" ]; then
+            echo "::error::Version, VERSION and Stable tag must be the same."
+            exit 1
+          fi
+          latest=$(git tag --list 'v*' | sed 's/^v//' | sort -V | tail -n1)
+          echo "Newest release: ${latest:-none}"
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$header" | sort -V | tail -n1)" = "$latest" ]; then
+            echo "Not higher than the newest release: nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$header" >> "$GITHUB_OUTPUT"
+
+      - name: Check
+        if: steps.version.outputs.release == 'true'
+        run: |
+          find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+          for f in assets/*.js; do node --check "$f"; done
+
+      - name: Pack
+        if: steps.version.outputs.release == 'true'
+        run: |
+          git archive --format=zip --prefix=eightam-og-image/ -o eightam-og-image.zip HEAD
+          unzip -l eightam-og-image.zip
+
+      - name: Release notes
+        if: steps.version.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # The readme's changelog entry for this version, as Markdown.
+          awk -v v="= $VERSION =" '
+            $0 == v { on = 1; next }
+            on && /^= / { exit }
+            on && /^== / { exit }
+            on { print }
+          ' readme.txt > notes.md
+          if [ ! -s notes.md ]; then
+            echo "Version $VERSION." > notes.md
+          fi
+          cat notes.md
+
+      - name: Publish
+        if: steps.version.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" eightam-og-image.zip \
+            --target "$GITHUB_SHA" \
+            --title "8am OG Image $VERSION" \
+            --notes-file notes.md \
+            --latest

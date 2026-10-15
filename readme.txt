@@ -4,7 +4,7 @@ Tags: open graph, og:image, social sharing, share image, twitter card
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 
 A share image for every page, drawn from one template: the logo, the title, a bar of colour and the featured image, or the page's first picture without one. Drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it.
@@ -114,6 +114,10 @@ In `wp-content/uploads/eightam-og-image/`, as `post-12-3f9c0a1b2c4d.jpg`, `type-
     wp eightam-og-image status            # GD, fonts, how many cards
     wp eightam-og-image flush             # delete them all; each is drawn again when needed
 
+= Updates =
+
+Each new version is published as a release of [github.com/eightam/eightam-wp-og-image](https://github.com/eightam/eightam-wp-og-image/releases), and WordPress offers it on the Plugins screen like an update from WordPress.org, at most six hours after it is published ("Check again" on Dashboard → Updates asks at once). Install the plugin from a release's `eightam-og-image.zip`.
+
 == Frequently Asked Questions ==
 
 = I changed the title and Facebook still shows the old card. =
@@ -129,6 +133,10 @@ GD is on every server WordPress runs on, and draws a card in a tenth of a second
 In the editor: "Words on the card" in the Share image panel. In code: `eightam_og_image_card`.
 
 == Changelog ==
+
+= 1.2.0 =
+* Updates from GitHub: the Plugins screen offers each new release of github.com/eightam/eightam-wp-og-image, and automatic updates work when they are turned on. The header's `Update URI` keeps WordPress.org from offering another plugin of the same name.
+* An update installs into the folder the plugin is in, whatever it is called.
 
 = 1.1.0 =
 * Settings → Share images: four templates (Spotlight, Paper, Full bleed, Brand colour) with thumbnails and a live preview, the colours, typefaces, logo and mark, what a card says beside its title, the kinds of post, the tags, and a button that deletes every card.

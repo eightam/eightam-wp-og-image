@@ -1,0 +1,5 @@
+# Left out of the release zip (git archive), which is what sites install.
+/.github export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/README.md export-ignore

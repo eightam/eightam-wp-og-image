@@ -11,4 +11,14 @@ A share image for every page of a WordPress site — the picture a link shows on
 
 Requires WordPress 6.7 and PHP 8.1 with GD and FreeType. See [readme.txt](readme.txt) for the filters and the WP-CLI commands.
 
-The bundled Inter is © The Inter Project Authors, under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
+## Install and update
+
+Download `eightam-og-image.zip` from the [latest release](https://github.com/eightam/eightam-wp-og-image/releases/latest) and upload it under Plugins → Add New. From then on WordPress offers each new release on the Plugins screen, and installs it automatically if auto-updates are turned on for the plugin.
+
+## Releasing
+
+Raise the version in all three places — `Version:` in the header and `VERSION` in `eightam-og-image.php`, `Stable tag:` in `readme.txt` — and add a changelog entry under `== Changelog ==` in `readme.txt`. When that lands on `main`, the [Release workflow](.github/workflows/release.yml) checks the code, builds `eightam-og-image.zip` and publishes it as release `v{version}` with the changelog entry as its notes. A push that does not raise the version releases nothing; versions that disagree fail the run.
+
+## License
+
+GPL-2.0-or-later, as WordPress itself; see [LICENSE](LICENSE). The bundled Inter is © The Inter Project Authors, under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
