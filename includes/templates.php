@@ -61,9 +61,11 @@ function all(): array {
  *
  * @param array<string,mixed> $settings Settings (includes/settings.php).
  * @param array<string,mixed> $brand    Brand (includes/brand.php).
+ * @param mixed               $subject  What the card is of: the page's logo
+ *                                      can be its own.
  * @return array<string,mixed>
  */
-function style( array $settings, array $brand ): array {
+function style( array $settings, array $brand, $subject = null ): array {
 	$template = isset( all()[ $settings['template'] ] ) ? (string) $settings['template'] : 'spotlight';
 	$c        = (array) $brand['colors'];
 	$dark     = Brand\hex( (string) $c['dark'] ) ?: '#161616';
@@ -159,7 +161,7 @@ function style( array $settings, array $brand ): array {
 		$style['meta']['color']     = $style['title']['color'];
 	}
 
-	$style['logo'] = logo( $settings, $brand, $template, $background, $light, $fonts['title'] );
+	$style['logo'] = logo( $settings, $brand, $template, $background, $light, $fonts['title'], $subject );
 	$style['mark'] = mark( $settings, $brand );
 	return $style;
 }
@@ -236,12 +238,14 @@ function bar( array $settings, string $template, string $accent, string $accent2
  * @param string              $background The card's background.
  * @param string              $light      The brand's light colour.
  * @param string              $font       The title's font file.
+ * @param mixed               $subject    What the card is of.
  * @return array<string,mixed>
  */
-function logo( array $settings, array $brand, string $template, string $background, string $light, string $font ): array {
+function logo( array $settings, array $brand, string $template, string $background, string $light, string $font, $subject = null ): array {
 	$id   = (int) $settings['logo'];
-	$id   = 0 === $id ? (int) $brand['logo'] : $id;
+	$id   = 0 === $id ? ( $subject ? Brand\logo( $subject ) : (int) $brand['logo'] ) : $id;
 	$file = $id > 0 ? image_file( $id ) : '';
+	$size = (string) $settings['logo_size'];
 
 	// A logo is drawn for the site's own background, which is light more
 	// often than not: on a dark card it hangs on a tab of the light colour,
@@ -256,13 +260,21 @@ function logo( array $settings, array $brand, string $template, string $backgrou
 
 	return array(
 		'file'    => -1 === (int) $settings['logo'] ? '' : $file,
-		'height'  => 64,
+		'height'  => match ( $size ) {
+			'small' => 56,
+			'large' => 108,
+			default => 80,
+		},
 		'tab'     => -1 === (int) $settings['logo'] ? '' : $tab_color,
-		'padding' => 22,
+		'padding' => 'large' === $size ? 26 : 22,
 		'radius'  => 16,
 		'text'    => -1 === (int) $settings['logo'] || '' !== $file ? '' : (string) get_bloginfo( 'name' ),
 		'font'    => $font,
-		'size'    => 30,
+		'size'    => match ( $size ) {
+			'small' => 26,
+			'large' => 42,
+			default => 32,
+		},
 		'color'   => Brand\readable( $on, array( 'cover' === $template ? '#ffffff' : (string) $brand['colors']['heading'], (string) $brand['colors']['dark'] ) ),
 	);
 }
@@ -304,24 +316,29 @@ function image_file( int $id ): string {
 }
 
 /**
- * An SVG file drawn to a PNG 400 pixels tall, kept beside the cards. '' where
- * Imagick cannot read SVG.
+ * An SVG file as a PNG GD can read, or ''. The PNG an administrator's browser
+ * drew of it on the settings page (logo_png()) comes first: a browser draws
+ * SVG exactly, CSS, clipping paths and all. Without one, Imagick draws it
+ * where its SVG reader is installed, which is good enough for simple files.
  *
  * @param string $file SVG file.
  */
 function svg_png( string $file ): string {
-	$dir = \Eightam\OgImage\folder()['dir'] . '/logos';
-	$png = $dir . '/' . md5_file( $file ) . '.png';
-	if ( is_readable( $png ) ) {
-		return $png;
+	$dir  = \Eightam\OgImage\folder()['dir'] . '/logos';
+	$hash = md5_file( $file );
+	foreach ( array( $dir . '/' . $hash . '.png', $dir . '/' . $hash . '-imagick.png' ) as $png ) {
+		if ( is_readable( $png ) ) {
+			return $png;
+		}
 	}
+	$png = $dir . '/' . $hash . '-imagick.png';
 	if ( ! class_exists( '\Imagick' ) || ! in_array( 'SVG', \Imagick::queryFormats( 'SVG' ), true ) || ! wp_mkdir_p( $dir ) ) {
 		return '';
 	}
 	try {
 		$image = new \Imagick();
 		$image->setBackgroundColor( new \ImagickPixel( 'transparent' ) );
-		$image->setResolution( 288, 288 );
+		$image->setResolution( 600, 600 );
 		$image->readImage( $file );
 		$image->setImageFormat( 'png32' );
 		$image->scaleImage( 0, 400 );
@@ -331,4 +348,50 @@ function svg_png( string $file ): string {
 		return '';
 	}
 	return is_readable( $png ) ? $png : '';
+}
+
+/**
+ * Keep the PNG a browser drew of an SVG logo: checked, drawn again with GD,
+ * so nothing but pixels is kept, and named after the SVG file's content.
+ *
+ * @param int    $id  The SVG's attachment ID.
+ * @param string $png What the browser drew.
+ */
+function logo_png( int $id, string $png ): bool {
+	$file = (string) get_attached_file( $id );
+	if ( '' === $file || ! preg_match( '/\.svgz?$/i', $file ) || ! is_readable( $file ) ) {
+		return false;
+	}
+	$info = @getimagesizefromstring( $png ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	if ( ! $info || IMAGETYPE_PNG !== $info[2] || $info[0] > 4000 || $info[1] > 2000 ) {
+		return false;
+	}
+	$image = @imagecreatefromstring( $png ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	$dir   = \Eightam\OgImage\folder()['dir'] . '/logos';
+	if ( ! $image instanceof \GdImage || ! wp_mkdir_p( $dir ) ) {
+		return false;
+	}
+	imagesavealpha( $image, true );
+	return imagepng( $image, $dir . '/' . md5_file( $file ) . '.png', 9 );
+}
+
+/**
+ * The SVG logos the site may show that no browser has drawn yet, for the
+ * settings page to draw.
+ *
+ * @param int[] $ids Attachment IDs.
+ * @return array<int,array{id:int,url:string}>
+ */
+function svgs_to_draw( array $ids ): array {
+	$out = array();
+	foreach ( array_unique( array_filter( $ids ) ) as $id ) {
+		$file = (string) get_attached_file( (int) $id );
+		if ( '' !== $file && preg_match( '/\.svgz?$/i', $file ) && is_readable( $file ) && ! is_readable( \Eightam\OgImage\folder()['dir'] . '/logos/' . md5_file( $file ) . '.png' ) ) {
+			$out[] = array(
+				'id'  => (int) $id,
+				'url' => (string) wp_get_attachment_url( (int) $id ),
+			);
+		}
+	}
+	return $out;
 }

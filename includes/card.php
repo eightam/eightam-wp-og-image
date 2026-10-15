@@ -513,7 +513,7 @@ function style( array $card, $subject ): array {
 	 * @param array                                $card    The card.
 	 * @param \WP_Post|\WP_Post_Type|\WP_Term|null $subject What it is the card of.
 	 */
-	$style = Template\style( (array) apply_filters( 'eightam_og_image_style', Templates\style( settings(), Brand\get() ), $card, $subject ) );
+	$style = Template\style( (array) apply_filters( 'eightam_og_image_style', Templates\style( settings_for( $subject ), Brand\get(), $subject ), $card, $subject ) );
 
 	$title = (string) $style['title']['font'];
 	if ( ! is_readable( $title ) ) {

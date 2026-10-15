@@ -4,7 +4,7 @@ Tags: open graph, og:image, social sharing, share image, twitter card
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.2.1
+Stable tag: 1.3.0
 License: GPLv2 or later
 
 A share image for every page, drawn from one template: the logo, the title, a bar of colour and the featured image, or the page's first picture without one. Drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it.
@@ -28,14 +28,15 @@ A link shared on WhatsApp, Signal, Facebook, LinkedIn, Slack or X shows the pict
 * **Template** — Spotlight (dark, the photograph fading in from the right), Paper (light, the photograph beside the title on a clean edge), Full bleed (the photograph across the card under a scrim, the title over it) or Brand colour (the accent as the background). Each thumbnail is drawn from the site's own brand and a real post.
 * **Colours** — background, type and accent, each the theme's unless picked, with the theme's palette to pick from; the bar along the foot as the template has it, none, or colours of your own.
 * **Typefaces** — the title's and the other words', each a family the theme has or any on Google Fonts, at any weight.
-* **Logo** — the site's, none, or another image; on a tab of the theme's light colour on a dark card, always or never. Without a logo the site's name is set in its place. A mark — the site icon or another image — for a card without a photograph.
+* **Logo** — the page's own, none, or another image, small, medium or large; on a tab of the theme's light colour on a dark card, always or never. Without a logo the site's name is set in its place. A mark — the site icon or another image — for a card without a photograph. An SVG logo is drawn to a PNG by the browser of the administrator who opens the settings page, exactly as the site shows it.
+* **Variants** — a part of the site drawn differently: a page and every page under it, or a kind of post, with a template, a logo, a background or an accent of its own. The first variant that fits a page is used.
 * **What a card says** — over the title the category or the kind of post; under it the date, the author, both or the excerpt; at the foot the address or the site's name. Whether a post without a featured image shows the first large picture in its text.
 * **Advanced** — the kinds of post that have a card, whether the Open Graph tags are printed beside an SEO plugin, and whether Google Fonts may be asked.
 * **Delete all share images** — every card is drawn again when its page is next needed; optionally the typefaces are fetched again too. Saving new settings already draws each card again when it is next needed: a card's file name is a hash of everything on it.
 
 = Where the brand comes from =
 
-* **Blocksy**: the eight palette colours of the Customizer (the first two its accents, the third its text, the fourth its headings, the sixth its light background) and the families and weights of Base Font and Heading 1.
+* **Blocksy**: the eight palette colours of the Customizer (the first two its accents, the third its text, the fourth its headings, the lightest of the fifth to eighth its light background; a translucent colour is laid over white) and the families and weights of Base Font and Heading 1, including fonts uploaded to Blocksy Pro's Custom Fonts. With Blocksy Pro, a page that has a header of its own (Header → display conditions) shows that header's logo on its card.
 * **A theme with theme.json** (Twenty Twenty-Five and every block theme): the body's background and text, the headings' colour, the link's or the button's colour as the accent, the palette, and the font families of the body and the headings with the files of their faces.
 * **Any other theme**: the logo, and a neutral set of colours to change in the settings.
 
@@ -43,7 +44,11 @@ A link shared on WhatsApp, Signal, Facebook, LinkedIn, Slack or X shows the pict
 
 = Typefaces =
 
-GD draws type from one TrueType or OpenType file, at a variable font's default weight only, and kerns only from a legacy `kern` table. So a family is looked for, in order: in the theme's own files, if one is TrueType, OpenType or WOFF, static, and of the weight wanted; on Google Fonts, which serves a static cut of any weight of its families, fetched once by the server and kept in `uploads/eightam-og-image/fonts/` (readers' browsers never ask Google for anything); then Plus Jakarta Sans, which the plugin carries; then the server's own. Each file is given a `kern` table written from its GPOS kerning, in PHP, once.
+GD draws type from one TrueType or OpenType file, at a variable font's default weight only, and kerns only from a legacy `kern` table. So a family is looked for, in order: in the theme's own files (theme.json, the Font Library, Blocksy Pro's Custom Fonts), if one is TrueType, OpenType or WOFF, static, and of the weight wanted — a WOFF2 file, which PHP cannot unpack, is unpacked once by the browser of an administrator who opens Settings → Share images, with Google's WOFF2 decoder (`assets/vendor/woff2/`, MIT); on Google Fonts, which serves a static cut of any weight of its families, fetched once by the server and kept in `uploads/eightam-og-image/fonts/` (readers' browsers never ask Google for anything); then Plus Jakarta Sans, which the plugin carries; then the server's own. Each file is given a `kern` table written from its GPOS kerning, in PHP, once.
+
+= SEO plugins =
+
+Where Yoast SEO, Rank Math, SEOPress, All in One SEO or The SEO Framework prints the Open Graph tags, this plugin prints none of its own. With **SEOPress** it puts the card into SEOPress's own `og:image` and `twitter:image` and asks for the large Twitter card, unless an editor chose an image in SEOPress's Social box for that post or term. `eightam_og_image_seo_plugin` turns that off.
 
 = What a card says =
 
@@ -91,6 +96,7 @@ Without a font it can read, the plugin uses Plus Jakarta Sans, and then the serv
 = Other filters =
 
 * `eightam_og_image_brand` — the colours, typefaces and logo read from the theme.
+* `eightam_og_image_logo` — the logo the site shows on the page a card is of.
 
 * `eightam_og_image_post_types` — the types that have a card. Default: every public type but attachments.
 * `eightam_og_image_field_types` — the types whose editors see the Share image panel. Default: those with a card that show their meta in the REST API.
@@ -133,6 +139,14 @@ GD is on every server WordPress runs on, and draws a card in a tenth of a second
 In the editor: "Words on the card" in the Share image panel. In code: `eightam_og_image_card`.
 
 == Changelog ==
+
+= 1.3.0 =
+* Variants: a page and the pages under it, or a kind of post, drawn with a template, logo, background or accent of its own.
+* With Blocksy Pro, a page with a header of its own shows that header's logo on its card.
+* SVG logos are drawn by the administrator's browser on the settings page, exactly as the site shows them, instead of by Imagick; logos are larger and come in three sizes.
+* Fonts uploaded to Blocksy Pro's Custom Fonts are used, WOFF2 included: the browser unpacks a WOFF2 file once with Google's decoder, and the server kerns it for GD.
+* SEOPress: its og:image and twitter:image show the card, with the large Twitter card.
+* Blocksy palette colours with transparency are laid over white, so a light template is light again.
 
 = 1.2.1 =
 * The typeface the plugin carries, for a site whose own cannot be found, is Plus Jakarta Sans instead of Inter; the plugin is 0.56 MB lighter.

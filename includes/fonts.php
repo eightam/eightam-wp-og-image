@@ -5,9 +5,12 @@
  *
  * A family is looked for, in order:
  *
- * 1. in the files the theme names for it — theme.json's `fontFace`, or a
- *    font installed through the Font Library — if one is TrueType, OpenType
- *    or WOFF, static, and of the weight wanted;
+ * 1. in the files the theme names for it — theme.json's `fontFace`, a font
+ *    installed through the Font Library, or one uploaded to Blocksy Pro's
+ *    Custom Fonts — if one is TrueType, OpenType or WOFF, static, and of the
+ *    weight wanted. A WOFF2 file, which PHP cannot unpack, is unpacked by
+ *    the browser of an administrator who opens Settings → Share images
+ *    (assets/settings.js), and its TrueType copy used from then on;
  * 2. on Google Fonts, which serves a static TrueType cut of any weight of its
  *    families: fetched once, by the server, never by a reader's browser;
  * 3. among the plugin's own, Plus Jakarta Sans, in assets/fonts/;
@@ -164,7 +167,10 @@ function from_sources( string $family, int $weight, bool $italic, array $sources
 	$ranked = array();
 	foreach ( $sources as $source ) {
 		$path = (string) ( $source['file'] ?? '' );
-		if ( '' === $path || ! is_readable( $path ) || preg_match( '/\.woff2$/i', $path ) ) {
+		if ( '' !== $path && preg_match( '/\.woff2$/i', $path ) ) {
+			$path = unpacked( $path );
+		}
+		if ( '' === $path || ! is_readable( $path ) ) {
 			continue;
 		}
 		$range = array_map( 'intval', preg_split( '/\s+/', trim( (string) ( $source['weight'] ?? '400' ) ) ) ?: array( 400 ) );
@@ -173,7 +179,10 @@ function from_sources( string $family, int $weight, bool $italic, array $sources
 		$miss  = $weight < $low ? $low - $weight : ( $weight > $high ? $weight - $high : 0 );
 		$style = 'italic' === (string) ( $source['style'] ?? 'normal' ) ? 1 : 0;
 		$miss += ( $style !== (int) $italic ) ? 1000 : 0;
-		$ranked[ $path ] = array( $miss, $low < $high );
+		// One file can stand for several weights: its closest counts.
+		if ( ! isset( $ranked[ $path ] ) || $miss < $ranked[ $path ][0] ) {
+			$ranked[ $path ] = array( $miss, $low < $high );
+		}
 	}
 	uasort( $ranked, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
 
@@ -251,6 +260,60 @@ function from_google( string $family, int $weight, bool $italic, string $key ): 
 		'file'   => '',
 		'source' => '',
 	);
+}
+
+/**
+ * The TrueType copy of a WOFF2 file, if a browser has unpacked it; ''.
+ *
+ * @param string $woff2 The WOFF2 file.
+ */
+function unpacked( string $woff2 ): string {
+	$file = is_readable( $woff2 ) ? folder()['dir'] . '/fonts/woff2-' . md5_file( $woff2 ) . '.ttf' : '';
+	return '' !== $file && is_readable( $file ) ? $file : '';
+}
+
+/**
+ * Keep the TrueType copy of a WOFF2 file a browser unpacked, made fit for GD,
+ * and look for the families again that could not be found.
+ *
+ * @param string $woff2 The WOFF2 file.
+ * @param string $ttf   What the browser made of it.
+ */
+function keep_unpacked( string $woff2, string $ttf ): bool {
+	$font = Sfnt\prepare( $ttf );
+	if ( null === $font || ! is_readable( $woff2 ) ) {
+		return false;
+	}
+	$file = store( 'woff2-' . md5_file( $woff2 ), $font );
+	if ( '' === $file ) {
+		return false;
+	}
+	$known = (array) get_option( OPTION, array() );
+	update_option( OPTION, array_filter( $known, static fn( $entry ): bool => '' !== (string) ( $entry['file'] ?? '' ) ), false );
+	return true;
+}
+
+/**
+ * The WOFF2 files a family in use has, not yet unpacked, for the settings
+ * page to unpack: those of the families that are set with the plugin's own
+ * typeface for want of anything else.
+ *
+ * @param array<string,array<int,array<string,mixed>>> $families Family => sources.
+ * @param string[]                                      $wanted   The families in use.
+ * @return string[] Their addresses.
+ */
+function to_unpack( array $families, array $wanted ): array {
+	$urls = array();
+	foreach ( array_unique( array_filter( $wanted ) ) as $family ) {
+		foreach ( (array) ( $families[ $family ] ?? array() ) as $source ) {
+			$file = (string) ( $source['file'] ?? '' );
+			if ( preg_match( '/\.woff2$/i', $file ) && '' === unpacked( $file ) ) {
+				$url = (string) ( $source['url'] ?? '' );
+				$urls[] = '' !== $url ? $url : str_replace( WP_CONTENT_DIR, content_url(), $file );
+			}
+		}
+	}
+	return array_values( array_unique( $urls ) );
 }
 
 /**
