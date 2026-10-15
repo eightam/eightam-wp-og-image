@@ -166,7 +166,7 @@ function style( array $settings, array $brand ): array {
 
 /**
  * The typefaces: the title in the heading family, the rest in the body's,
- * each a file GD can draw, or the plugin's own Inter.
+ * each a file GD can draw, or the plugin's own Plus Jakarta Sans.
  *
  * @param array<string,mixed> $settings Settings.
  * @param array<string,mixed> $brand    Brand.

@@ -3,7 +3,7 @@
  * Plugin Name:       8am OG Image
  * Plugin URI:        https://github.com/eightam/eightam-wp-og-image
  * Description:       A share image for every page, drawn from one template — the logo, the title, a bar of colour and the featured image — and drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it. A post can have an image of its own instead.
- * Version:           1.2.0
+ * Version:           1.2.1
  * Requires at least: 6.7
  * Requires PHP:      8.1
  * Author:            8am
@@ -43,7 +43,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 
 /*
  * The plugin's main file as WordPress addresses it: in its folder under the

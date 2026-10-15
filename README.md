@@ -5,7 +5,7 @@ A share image for every page of a WordPress site — the picture a link shows on
 - **Reads the brand from the theme**: Blocksy's Customizer palette and typography, or a theme.json theme's global styles, and the site's logo.
 - **Four templates** — Spotlight, Paper, Full bleed, Brand colour — chosen in **Settings → Share images**, with a live preview; colours, typefaces, logo and what the card says can all be changed there.
 - **Kept up to date by itself**: a card's file name is a hash of everything on it, so a new title, image or setting draws it again; the old file is deleted. "Delete all share images" starts afresh.
-- **Typefaces by name**: the theme's own files, or a static cut from Google Fonts fetched once by the server, kerned for GD in plain PHP. Inter is bundled as the fallback.
+- **Typefaces by name**: the theme's own files, or a static cut from Google Fonts fetched once by the server, kerned for GD in plain PHP. Plus Jakarta Sans is bundled as the fallback.
 - Prints the Open Graph and Twitter tags, unless an SEO plugin does.
 - An editor can change a post's card, or replace it with an image, in the editor's **Share image** panel.
 
@@ -21,4 +21,4 @@ Raise the version in all three places — `Version:` in the header and `VERSION`
 
 ## License
 
-GPL-2.0-or-later, as WordPress itself; see [LICENSE](LICENSE). The bundled Inter is © The Inter Project Authors, under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
+GPL-2.0-or-later, as WordPress itself; see [LICENSE](LICENSE). The bundled Plus Jakarta Sans is © The Plus Jakarta Sans Project Authors, under the SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
