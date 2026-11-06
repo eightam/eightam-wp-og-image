@@ -316,6 +316,8 @@ add_filter( 'eightam_og_image_card', __NAMESPACE__ . '\\setting_card', 5, 2 );
 function setting_card( $card, $subject ): array {
 	$card     = (array) $card;
 	$settings = settings();
+	// The page's address, kept for the facts before the foot is changed.
+	$host = (string) ( $card['meta'] ?? '' );
 
 	if ( 'name' === $settings['meta'] ) {
 		$card['meta'] = (string) get_bloginfo( 'name' );
@@ -327,7 +329,7 @@ function setting_card( $card, $subject ): array {
 	// in one, so another card is not drawn again when, say, its reading
 	// time changes.
 	if ( Templates\is_bento( (string) settings_for( $subject )['template'] ) ) {
-		$card['facts'] = array_merge( facts( $subject, $settings, (string) ( $card['meta'] ?? '' ) ), (array) ( $card['facts'] ?? array() ) );
+		$card['facts'] = array_merge( facts( $subject, $settings, $host ), (array) ( $card['facts'] ?? array() ) );
 	}
 
 	if ( ! $subject instanceof \WP_Post ) {
@@ -441,7 +443,9 @@ function fact( string $kind, $subject, string $host, string $field = '', string 
 			break;
 		case 'reading':
 			$own = __( 'Reading time', 'eightam-og-image' );
-			if ( $dated && ! post_password_required( $post ) ) {
+			// A protected post's text stays behind its password, whoever is
+			// viewing: the card is a public file.
+			if ( $dated && '' === $post->post_password ) {
 				$count = (int) preg_match_all( '/[\p{L}\p{N}]+/u', wp_strip_all_tags( strip_shortcodes( (string) $post->post_content ) ) );
 				$min   = max( 1, (int) ceil( $count / 200 ) );
 				/* translators: %d: minutes. */
@@ -479,7 +483,7 @@ function field_value( string $field, $subject ): array {
 	if ( '' === $field || ( ! $subject instanceof \WP_Post && ! $subject instanceof \WP_Term ) ) {
 		return array( '', '' );
 	}
-	if ( $subject instanceof \WP_Post && post_password_required( $subject ) ) {
+	if ( $subject instanceof \WP_Post && '' !== $subject->post_password ) {
 		return array( '', '' );
 	}
 	$label = '';
