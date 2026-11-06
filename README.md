@@ -1,9 +1,10 @@
 # 8am OG Image
 
-A share image for every page of a WordPress site — the picture a link shows on WhatsApp, Facebook, LinkedIn, Slack or X — drawn on the server with GD from one of four templates, in the colours and typefaces of the site's theme.
+A share image for every page of a WordPress site — the picture a link shows on WhatsApp, Facebook, LinkedIn, Slack or X — drawn on the server with GD from one of eight templates, in the colours and typefaces of the site's theme.
 
 - **Reads the brand from the theme**: Blocksy's Customizer palette and typography, or a theme.json theme's global styles, and the site's logo.
-- **Four templates** — Spotlight, Paper, Full bleed, Brand colour — chosen in **Settings → Share images**, with a live preview; colours, typefaces, logo and what the card says can all be changed there, and **variants** give a page and its sub-pages, or a kind of post, a template and logo of their own.
+- **Eight templates** — classic: Spotlight, Paper, Full bleed, Brand colour; bento: Bento, Mosaic, Magazine, Banner — chosen in **Settings → Share images**, with a live preview; colours, typefaces, logo and what the card says can all be changed there, and **variants** give a page and its sub-pages, or a kind of post, a template and logo of their own.
+- **Bento tiles**: the title, the photograph, the logo and one or two facts (date, author, category, reading time, address, or an ACF field) on tiles with rounded corners, in a dark, light or brand-colour tone, with the gap and corner radius on sliders. A tile with nothing to show gets the mark or a pattern of squares.
 - **Blocksy Pro**: custom fonts (WOFF2 included, unpacked once in the admin's browser) and the logo of a page's own header.
 - **SVG logos** drawn exactly, by the admin's browser, once.
 - **Kept up to date by itself**: a card's file name is a hash of everything on it, so a new title, image or setting draws it again; the old file is deleted. "Delete all share images" starts afresh.

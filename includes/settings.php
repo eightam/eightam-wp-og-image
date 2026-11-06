@@ -62,6 +62,16 @@ function default_settings(): array {
 		'logo_size'    => 'medium',
 		'logo_tab'     => 'auto',
 		'mark'         => -1,
+		'tone'         => 'dark',
+		'head_fill'    => 'gradient',
+		'gap'          => 16,
+		'radius'       => 24,
+		'fact1'        => 'date',
+		'fact1_field'  => '',
+		'fact1_label'  => '',
+		'fact2'        => 'term',
+		'fact2_field'  => '',
+		'fact2_label'  => '',
 		'kicker'       => 'none',
 		'subtitle'     => 'none',
 		'meta'         => 'host',
@@ -103,6 +113,15 @@ function sanitize_settings( $input ): array {
 
 	foreach ( array( 'logo', 'mark' ) as $key ) {
 		$out[ $key ] = max( -1, (int) ( $input[ $key ] ?? $out[ $key ] ) );
+	}
+	$out['tone']      = $pick( 'tone', array( 'dark', 'light', 'brand' ) );
+	$out['head_fill'] = $pick( 'head_fill', array( 'gradient', 'accent', 'tile' ) );
+	$out['gap']       = max( 0, min( 40, (int) ( $input['gap'] ?? $out['gap'] ) ) );
+	$out['radius']    = max( 0, min( 48, (int) ( $input['radius'] ?? $out['radius'] ) ) );
+	foreach ( array( 'fact1', 'fact2' ) as $key ) {
+		$out[ $key ]            = $pick( $key, array_keys( fact_kinds() ) );
+		$out[ $key . '_field' ] = substr( (string) preg_replace( '/[^A-Za-z0-9_-]/', '', (string) ( $input[ $key . '_field' ] ?? '' ) ), 0, 64 );
+		$out[ $key . '_label' ] = mb_substr( sanitize_text_field( (string) ( $input[ $key . '_label' ] ?? '' ) ), 0, 40 );
 	}
 	$out['logo_tab']  = $pick( 'logo_tab', array( 'auto', 'on', 'off' ) );
 	$out['logo_size'] = $pick( 'logo_size', array( 'small', 'medium', 'large' ) );
@@ -304,6 +323,13 @@ function setting_card( $card, $subject ): array {
 		$card['meta'] = '';
 	}
 
+	// The facts a bento template shows on its tiles; only for a card drawn
+	// in one, so another card is not drawn again when, say, its reading
+	// time changes.
+	if ( Templates\is_bento( (string) settings_for( $subject )['template'] ) ) {
+		$card['facts'] = array_merge( facts( $subject, $settings, (string) ( $card['meta'] ?? '' ) ), (array) ( $card['facts'] ?? array() ) );
+	}
+
 	if ( ! $subject instanceof \WP_Post ) {
 		return $card;
 	}
@@ -336,6 +362,153 @@ function setting_card( $card, $subject ): array {
 }
 
 /**
+ * The facts a bento tile can show, as kind => what the settings call it.
+ *
+ * @return array<string,string>
+ */
+function fact_kinds(): array {
+	return array(
+		'date'    => __( 'The date', 'eightam-og-image' ),
+		'author'  => __( 'The author', 'eightam-og-image' ),
+		'term'    => __( 'The category', 'eightam-og-image' ),
+		'type'    => __( 'The kind of post', 'eightam-og-image' ),
+		'reading' => __( 'The reading time', 'eightam-og-image' ),
+		'site'    => __( 'The site’s name', 'eightam-og-image' ),
+		'host'    => __( 'The address', 'eightam-og-image' ),
+		'field'   => __( 'A custom field (ACF or post meta)', 'eightam-og-image' ),
+	);
+}
+
+/**
+ * The two facts of a card, as `fact1` and `fact2` => label and value. A
+ * fact the card's page lacks — the date of a page, the category of an
+ * archive — is replaced by the address, or the site's name if the other
+ * fact is the address.
+ *
+ * @param mixed               $subject  What the card is of.
+ * @param array<string,mixed> $settings Settings.
+ * @param string              $host     The card's address.
+ * @return array<string,array{label:string,value:string}>
+ */
+function facts( $subject, array $settings, string $host ): array {
+	$facts = array();
+	foreach ( array( 'fact1', 'fact2' ) as $slot ) {
+		$facts[ $slot ] = fact( (string) $settings[ $slot ], $subject, $host, (string) $settings[ $slot . '_field' ], (string) $settings[ $slot . '_label' ] );
+	}
+	foreach ( array( 'fact1' => 'fact2', 'fact2' => 'fact1' ) as $slot => $other ) {
+		if ( '' === $facts[ $slot ]['value'] ) {
+			$taken          = '' === $host || ( $facts[ $other ]['value'] === $host ) || 'host' === (string) $settings[ $other ];
+			$facts[ $slot ] = fact( $taken ? 'site' : 'host', $subject, $host );
+		}
+	}
+	return $facts;
+}
+
+/**
+ * One fact of a card: what the settings call `$kind`, for what the card is
+ * of, with its label. An empty value where the page has no such thing.
+ *
+ * @param string $kind    A key of fact_kinds().
+ * @param mixed  $subject What the card is of.
+ * @param string $host    The card's address.
+ * @param string $field   With `field`, the field's name.
+ * @param string $label   A label to use instead of the fact's own.
+ * @return array{label:string,value:string}
+ */
+function fact( string $kind, $subject, string $host, string $field = '', string $label = '' ): array {
+	$post  = $subject instanceof \WP_Post ? $subject : null;
+	$dated = $post && 'page' !== $post->post_type;
+	$own   = '';
+	$value = '';
+	switch ( $kind ) {
+		case 'date':
+			$own   = __( 'Published', 'eightam-og-image' );
+			$value = $dated ? (string) get_the_date( '', $post ) : '';
+			break;
+		case 'author':
+			$own   = __( 'Author', 'eightam-og-image' );
+			$value = $dated ? (string) get_the_author_meta( 'display_name', (int) $post->post_author ) : '';
+			break;
+		case 'term':
+			$term  = $post ? first_term_of( $post ) : array( '', '' );
+			$own   = '' !== $term[1] ? $term[1] : __( 'Category', 'eightam-og-image' );
+			$value = $term[0];
+			break;
+		case 'type':
+			$type  = $dated ? get_post_type_object( $post->post_type ) : null;
+			$own   = __( 'Type', 'eightam-og-image' );
+			$value = $type ? (string) $type->labels->singular_name : '';
+			break;
+		case 'reading':
+			$own = __( 'Reading time', 'eightam-og-image' );
+			if ( $dated && ! post_password_required( $post ) ) {
+				$count = (int) preg_match_all( '/[\p{L}\p{N}]+/u', wp_strip_all_tags( strip_shortcodes( (string) $post->post_content ) ) );
+				$min   = max( 1, (int) ceil( $count / 200 ) );
+				/* translators: %d: minutes. */
+				$value = $count > 0 ? sprintf( _n( '%d min', '%d min', $min, 'eightam-og-image' ), $min ) : '';
+			}
+			break;
+		case 'site':
+			$own   = __( 'Website', 'eightam-og-image' );
+			$value = (string) get_bloginfo( 'name' );
+			break;
+		case 'host':
+			$own   = __( 'More at', 'eightam-og-image' );
+			$value = $host;
+			break;
+		case 'field':
+			[ $own, $value ] = field_value( $field, $subject );
+			break;
+	}
+	return array(
+		'label' => '' !== $label ? $label : $own,
+		'value' => words( mb_substr( $value, 0, 80 ) ),
+	);
+}
+
+/**
+ * A custom field of a post or a term as a line of text, with its label: ACF's
+ * value as ACF formats it where ACF is active, else the meta as it is
+ * stored. A list becomes its parts joined by commas; a post, its title.
+ *
+ * @param string $field   The field's name.
+ * @param mixed  $subject A post or a term.
+ * @return array{0:string,1:string} Label and value.
+ */
+function field_value( string $field, $subject ): array {
+	if ( '' === $field || ( ! $subject instanceof \WP_Post && ! $subject instanceof \WP_Term ) ) {
+		return array( '', '' );
+	}
+	if ( $subject instanceof \WP_Post && post_password_required( $subject ) ) {
+		return array( '', '' );
+	}
+	$label = '';
+	if ( function_exists( 'get_field' ) && function_exists( 'get_field_object' ) ) {
+		$value  = get_field( $field, $subject instanceof \WP_Post ? $subject->ID : $subject );
+		$object = get_field_object( $field, $subject instanceof \WP_Post ? $subject->ID : $subject, false, false );
+		$label  = is_array( $object ) ? (string) ( $object['label'] ?? '' ) : '';
+	} else {
+		$value = $subject instanceof \WP_Post ? get_post_meta( $subject->ID, $field, true ) : get_term_meta( $subject->term_id, $field, true );
+	}
+	$flat = static function ( $value ) use ( &$flat ): string {
+		if ( $value instanceof \WP_Post ) {
+			return (string) get_the_title( $value );
+		}
+		if ( $value instanceof \WP_Term ) {
+			return $value->name;
+		}
+		if ( is_array( $value ) ) {
+			if ( isset( $value['label'] ) && is_scalar( $value['label'] ) ) {
+				return (string) $value['label'];
+			}
+			return implode( ', ', array_filter( array_map( $flat, $value ), 'strlen' ) );
+		}
+		return is_scalar( $value ) && ! is_bool( $value ) ? (string) $value : '';
+	};
+	return array( $label, wp_strip_all_tags( $flat( $value ) ) );
+}
+
+/**
  * A post's first term in its first public taxonomy that has one, other than
  * its format: its category, for a post. Yoast's primary category where there
  * is one.
@@ -343,6 +516,17 @@ function setting_card( $card, $subject ): array {
  * @param \WP_Post $post Post.
  */
 function first_term( \WP_Post $post ): string {
+	return first_term_of( $post )[0];
+}
+
+/**
+ * A post's first term, as first_term() finds it, and its taxonomy's name for
+ * one term, such as Category.
+ *
+ * @param \WP_Post $post Post.
+ * @return array{0:string,1:string}
+ */
+function first_term_of( \WP_Post $post ): array {
 	foreach ( get_object_taxonomies( $post->post_type, 'objects' ) as $taxonomy ) {
 		if ( ! $taxonomy->public || 'post_format' === $taxonomy->name ) {
 			continue;
@@ -354,10 +538,10 @@ function first_term( \WP_Post $post ): string {
 			$term  = is_array( $terms ) ? ( $terms[0] ?? null ) : null;
 		}
 		if ( $term instanceof \WP_Term && 'uncategorized' !== $term->slug ) {
-			return $term->name;
+			return array( $term->name, (string) $taxonomy->labels->singular_name );
 		}
 	}
-	return '';
+	return array( '', '' );
 }
 
 add_action( 'update_option_' . OPTION, __NAMESPACE__ . '\\settings_changed', 10, 0 );

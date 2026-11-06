@@ -4,7 +4,7 @@ Tags: open graph, og:image, social sharing, share image, twitter card
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 
 A share image for every page, drawn from one template: the logo, the title, a bar of colour and the featured image, or the page's first picture without one. Drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it.
@@ -15,7 +15,8 @@ A link shared on WhatsApp, Signal, Facebook, LinkedIn, Slack or X shows the pict
 
 * **One template.** The site's logo at the head, the title set as large as it fits at the foot, a kicker over it and a line under it, the address, a bar of colour along the bottom edge, and the featured image beside the type — fading in from the right, or with a clean edge. A page without a featured image shows its first picture large enough for a card; one without any picture has a mark of the site's own in the corner.
 * **The site's brand, out of the box.** With Blocksy, the colours and typefaces of its Customizer; with a theme that has theme.json, those of its global styles, as the Site Editor leaves them; and the site's logo. Nothing to set up.
-* **Four templates.** Spotlight, Paper, Full bleed and Brand colour, chosen in Settings → Share images, with a live preview, and any colour, typeface, logo or line of the card changed there.
+* **Eight templates.** Four classic ones — Spotlight, Paper, Full bleed and Brand colour — and four bento ones — Bento, Mosaic, Magazine and Banner — chosen in Settings → Share images, with a live preview, and any colour, typeface, logo or line of the card changed there.
+* **Bento.** The card divided into tiles with rounded corners: the title on a tile of the accent, flat or as a gradient, the photograph, the logo, and one or two facts — the date, the author, the category, the reading time, the address, or an ACF field such as a price — each a label over a large value. A dark, a light or a brand-colour tone, and the space between the tiles and their corners set with two sliders. A tile with nothing to show has the mark or a pattern of squares in its place, a few in the accent, different for every title.
 * **The site's code still has the last word.** `eightam_og_image_style` and `eightam_og_image_card` see what the settings made; a site with two brands hands over two styles and picks one per page.
 * **Up to date by itself.** A card is a file named after its page and a hash of everything drawn on it. A new title, another featured image, a new logo or a change of style makes a new name, so the card is drawn again and the old file deleted. A post's card is drawn in the background when it is saved; any page whose card is missing is drawn when first viewed. A post that stops being public, or is deleted, takes its cards with it.
 * **Every page.** Posts and pages of every public type, archives, terms and the front page each have a card: the front page says the site's tagline, an archive its name.
@@ -25,7 +26,8 @@ A link shared on WhatsApp, Signal, Facebook, LinkedIn, Slack or X shows the pict
 
 = Settings → Share images =
 
-* **Template** — Spotlight (dark, the photograph fading in from the right), Paper (light, the photograph beside the title on a clean edge), Full bleed (the photograph across the card under a scrim, the title over it) or Brand colour (the accent as the background). Each thumbnail is drawn from the site's own brand and a real post.
+* **Template** — classic: Spotlight (dark, the photograph fading in from the right), Paper (light, the photograph beside the title on a clean edge), Full bleed (the photograph across the card under a scrim, the title over it) or Brand colour (the accent as the background); bento: Bento (the title on a large tile, the logo, a fact and the photograph beside it), Mosaic (the photograph down the left), Magazine (the title across, the photograph down the right) or Banner (the photograph across the top). Each thumbnail is drawn from the site's own brand and a real post.
+* **Tiles** — for a bento template, with a plan of its grid: the tone (dark, light or the accent), the title's tile (the accent as a gradient, flat, or like the other tiles), the two facts with a label of your own, the space between the tiles and their corner radius. A fact a page lacks — the date of a page — shows the address instead. A custom field is read with ACF where it is active, so a select, a relationship or a date shows as ACF formats it.
 * **Colours** — background, type and accent, each the theme's unless picked, with the theme's palette to pick from; the bar along the foot as the template has it, none, or colours of your own.
 * **Typefaces** — the title's and the other words', each a family the theme has or any on Google Fonts, at any weight.
 * **Logo** — the page's own, none, or another image, small, medium or large; on a tab of the theme's light colour on a dark card, always or never. Without a logo the site's name is set in its place. A mark — the site icon or another image — for a card without a photograph. An SVG logo is drawn to a PNG by the browser of the administrator who opens the settings page, exactly as the site shows it.
@@ -66,6 +68,7 @@ Where Yoast SEO, Rank Math, SEOPress, All in One SEO or The SEO Framework prints
 * `kicker` — the small line over the title, set in capitals. Empty by default.
 * `subtitle` — the line under it. Parts separated by " · " are left out from the end until it fits.
 * `meta` — the address at the foot: the host the page is on.
+* `facts` — on a bento template, the facts its tiles show: `fact1` and `fact2`, each `array( 'label' => …, 'value' => … )`, as the settings chose them. A fact with an empty value has a pattern in its place.
 * `photo` — the featured image by default. Without one, the first picture in the post's text that is at least 600 by 300 pixels, in the order a reader meets it: whatever a block keeps by attachment ID (`id`, `mediaId`, `imageId`, `ids`, `imageIds` — an image, a cover, media and text, a gallery, a synced pattern's picture), else an `<img>` of the site's own, from uploads or the theme; `eightam_og_image_first_image` changes that choice or turns it off. An attachment ID, or `array( 'id' => … )`, `array( 'file' => … )` or `array( 'url' => … )` for a file in uploads, with an optional `'focus' => array( 'x' => 0.5, 'y' => 0.3 )`, the point to crop around, as CSS `object-position` places it. `eightam_og_image_focus` gives an attachment its focus wherever it is used; a cover's or media and text's focal point is used as it is.
 
 What an editor sets in the Share image panel wins over the filter.
@@ -85,6 +88,20 @@ What an editor sets in the Share image panel wins over the filter.
             'photo'      => array( 'layout' => 'fade' ),
         ) );
     }, 10, 3 );
+
+A bento card is `'layout' => 'bento'` and a grid in `bento`, as CSS `grid-template-areas` writes one; each tile names what it shows — `headline`, `photo`, `logo`, `pattern`, `mark` or a key of the card's `facts` — and its colours:
+
+    add_filter( 'eightam_og_image_style', function ( array $style ): array {
+        $style['layout'] = 'bento';
+        $style['bento']  = array_merge( $style['bento'], array(
+            'areas' => array( 'head head head price', 'photo photo logo price' ),
+            'tiles' => array(
+                'head'  => array( 'content' => 'headline', 'gradient' => array( '#6366f1', '#a855f7' ), 'color' => '#ffffff' ),
+                'price' => array( 'content' => 'fact1', 'background' => '#1e293b', 'color' => '#ffffff' ),
+            ) + $style['bento']['tiles'],
+        ) );
+        return $style;
+    } );
 
 GD reads neither SVG nor, reliably, WOFF2, so:
 
@@ -139,6 +156,13 @@ GD is on every server WordPress runs on, and draws a card in a tenth of a second
 In the editor: "Words on the card" in the Share image panel. In code: `eightam_og_image_card`.
 
 == Changelog ==
+
+= 1.4.0 =
+* Four bento templates — Bento, Mosaic, Magazine and Banner: the card divided into tiles with rounded corners, showing the title, the photograph, the logo and one or two facts.
+* Facts on the tiles: the date, the author, the category, the kind of post, the reading time, the site's name, the address, or a custom field read with ACF, each with a label of its own if wanted. A fact a page lacks is replaced by the address.
+* A Tiles section in Settings → Share images, shown for a bento template, with a plan of its grid: a dark, light or brand-colour tone, the title's tile as a gradient, flat or like the others, and sliders for the space between the tiles and their corner radius.
+* A tile with nothing to show has the mark, or a pattern of squares picked from the title, in its place.
+* The template picker groups the classic and the bento templates. The classic templates draw exactly as before.
 
 = 1.3.0 =
 * Variants: a page and the pages under it, or a kind of post, drawn with a template, logo, background or accent of its own.

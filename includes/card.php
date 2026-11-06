@@ -345,6 +345,13 @@ function tidy( array $card ): array {
 		'subtitle' => trim( (string) ( $card['subtitle'] ?? '' ) ),
 		'meta'     => trim( (string) ( $card['meta'] ?? '' ) ),
 		'photo'    => photo( $card['photo'] ?? null ),
+		'facts'    => array_map(
+			static fn( $fact ): array => array(
+				'label' => trim( (string) ( is_array( $fact ) ? ( $fact['label'] ?? '' ) : '' ) ),
+				'value' => trim( (string) ( is_array( $fact ) ? ( $fact['value'] ?? '' ) : $fact ) ),
+			),
+			array_filter( (array) ( $card['facts'] ?? array() ), static fn( $fact ): bool => is_array( $fact ) || is_scalar( $fact ) )
+		),
 	);
 }
 

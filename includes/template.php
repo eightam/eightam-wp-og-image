@@ -137,6 +137,32 @@ function defaults(): array {
 			// that, thinning out, as a share of the card's width.
 			'fade'   => 0.28,
 		),
+		// `classic`, the layout drawn above; or `bento`, a grid of tiles
+		// with rounded corners, laid out as `bento` says.
+		'layout'     => 'classic',
+		'bento'      => array(
+			// Rows of tile names, as CSS `grid-template-areas`: a name that
+			// spans cells spans them in the grid. A tile is the rectangle
+			// around its cells.
+			'areas'   => array(),
+			// How wide each column is and how tall each row, as shares (CSS
+			// `fr`); equal if empty.
+			'columns' => array(),
+			'rows'    => array(),
+			// Space between tiles, around them, and their corner radius.
+			'gap'     => 16,
+			'padding' => 32,
+			'radius'  => 24,
+			// Each tile, by name: `content` says what it shows —
+			// `headline` (the kicker, the title and the line under it),
+			// `photo` (the photograph; the mark or a pattern without one),
+			// `logo`, a fact (a key of the card's `facts`, such as `fact1`:
+			// a label over a value), `pattern` (a grid of squares, a few in
+			// the accent) or `mark`. `background` fills it, or `gradient`,
+			// two colours from top left to bottom right; `color` is its
+			// type's, `accent` the pattern's highlight.
+			'tiles'   => array(),
+		),
 	);
 }
 
@@ -192,6 +218,12 @@ function render( array $card, array $style ): \GdImage {
 		array_filter( (array) $style['glow'], 'is_array' )
 	);
 	$canvas = Canvas\backdrop( WIDTH, HEIGHT, (string) $style['background'], array_values( $glows ) );
+
+	if ( 'bento' === $style['layout'] && (array) $style['bento']['areas'] ) {
+		draw_bento( $canvas, $card, $style );
+		draw_bar( $canvas, $style );
+		return $canvas;
+	}
 
 	$photo  = photo( $card );
 	$column = WIDTH - 2 * (int) $style['margin'];
@@ -571,4 +603,427 @@ function draw_bar( \GdImage $canvas, array $style ): void {
  */
 function bar_height( array $style ): int {
 	return array_filter( (array) ( $style['bar']['colors'] ?? array() ) ) ? max( 0, (int) ( $style['bar']['height'] ?? 0 ) ) : 0;
+}
+
+/**
+ * A bento card: the card divided into tiles with rounded corners, as
+ * `bento` lays them out, each showing one thing.
+ *
+ *     ┌──────────────────────┐ ┌──────────┐ ┌──────────┐
+ *     │ KICKER               │ │   LOGO   │ │ Label    │
+ *     │                      │ └──────────┘ │ Value    │
+ *     │                      │ ┌────────────┴──────────┤
+ *     │ Title, as large as   │ │ photograph, or a      │
+ *     │ it fits              │ │ pattern without one   │
+ *     └──────────────────────┘ └───────────────────────┘
+ *
+ * A tile with nothing to show — a photograph, a fact or a logo the card
+ * lacks — shows the mark, or a pattern of squares, instead, so the grid
+ * stays whole.
+ *
+ * @param \GdImage            $canvas Canvas.
+ * @param array<string,mixed> $card   The card.
+ * @param array<string,mixed> $style  The style.
+ */
+function draw_bento( \GdImage $canvas, array $card, array $style ): void {
+	$bento   = (array) $style['bento'];
+	$padding = max( 0, (int) $bento['padding'] );
+	$rects   = areas( $bento, $padding, $padding, WIDTH - 2 * $padding, HEIGHT - bar_height( $style ) - 2 * $padding );
+	$tiles   = (array) $bento['tiles'];
+	$radius  = max( 0, (int) $bento['radius'] );
+
+	// What each tile shows, once what the card lacks is replaced.
+	$photo = photo( $card );
+	$mark  = '' !== (string) ( $style['mark']['file'] ?? '' ) ? Canvas\load( (string) $style['mark']['file'] ) : null;
+	$logo  = (array) $style['logo'];
+	$facts = (array) ( $card['facts'] ?? array() );
+	$plan  = array();
+	$shown = array();
+	foreach ( $rects as $name => $rect ) {
+		$tile    = (array) ( $tiles[ $name ] ?? array() );
+		$content = (string) ( $tile['content'] ?? $name );
+		if ( 'photo' === $content && ! $photo ) {
+			$content = $mark ? 'mark' : 'pattern';
+		} elseif ( 'mark' === $content && ! $mark ) {
+			$content = 'pattern';
+		} elseif ( 'logo' === $content && '' === (string) ( $logo['file'] ?? '' ) && '' === trim( (string) ( $logo['text'] ?? '' ) ) ) {
+			$content = 'pattern';
+		} elseif ( ! in_array( $content, array( 'headline', 'photo', 'logo', 'pattern', 'mark' ), true ) ) {
+			$value = trim( (string) ( $facts[ $content ]['value'] ?? '' ) );
+			if ( '' === $value ) {
+				$content = 'pattern';
+			} else {
+				$shown[] = $value;
+			}
+		}
+		$plan[ $name ] = array( $content, $tile, $rect );
+	}
+
+	// The facts' values in one size, the largest at which each that fits on
+	// one line fits, so the tiles read as a set; a longer value, a name
+	// over two lines, is set no larger.
+	$largest = 0;
+	foreach ( $plan as [ $content, $tile, $rect ] ) {
+		if ( isset( $facts[ $content ] ) && ! in_array( $content, array( 'headline', 'photo', 'logo', 'pattern', 'mark' ), true ) ) {
+			$fit = fact_fit( $style, $tile, $rect, tile_padding( $tile, $rect ), (array) $facts[ $content ], 0 )['fit'];
+			if ( 1 === count( $fit['lines'] ) ) {
+				$largest = $largest ? min( $largest, $fit['size'] ) : $fit['size'];
+			}
+		}
+	}
+
+	foreach ( $plan as [ $content, $tile, $rect ] ) {
+		[ $x, $y, $w, $h ] = $rect;
+		$layer             = tile_layer( $tile, $w, $h, (string) $style['background'] );
+		$pad               = tile_padding( $tile, $rect );
+
+		if ( 'photo' === $content ) {
+			Canvas\cover( $layer, $photo, 0, 0, $w, $h, (float) ( $card['photo']['focus']['x'] ?? 0.5 ), (float) ( $card['photo']['focus']['y'] ?? 0.5 ) );
+		} elseif ( 'mark' === $content ) {
+			$size = (int) round( min( $w, $h ) * 0.62 );
+			[ $mw, $mh ] = contain( $mark, $size, $size );
+			Canvas\place( $layer, $mark, intdiv( $w - $mw, 2 ), intdiv( $h - $mh, 2 ), $mw, $mh );
+		}
+		Canvas\paste_rounded( $canvas, $layer, $x, $y, $radius );
+
+		match ( $content ) {
+			'headline' => tile_headline( $canvas, $card, $style, $tile, $rect, $pad ),
+			'logo'     => tile_logo( $canvas, $style, $tile, $rect, $pad ),
+			'pattern'  => tile_pattern( $canvas, $card, $tile, $rect, $pad, $shown ),
+			'photo', 'mark' => null,
+			default    => tile_fact( $canvas, $style, $tile, $rect, $pad, (array) $facts[ $content ], $largest ),
+		};
+	}
+}
+
+/**
+ * A line cut to a width: at a word where it can be, else, for one word too
+ * long on its own — "Musterfrau-Oberholzer" in a narrow tile — within it.
+ *
+ * @param string $font  Font file.
+ * @param float  $size  Size in pixels.
+ * @param string $line  The line.
+ * @param int    $width How wide it may be.
+ */
+function clip( string $font, float $size, string $line, int $width ): string {
+	$line  = Canvas\shorten( $font, $size, $line, $width );
+	$chars = preg_split( '//u', rtrim( $line, '…' ), -1, PREG_SPLIT_NO_EMPTY );
+	$chars = is_array( $chars ) ? $chars : array();
+	while ( count( $chars ) > 1 && Canvas\width( $font, $size, $line ) > $width ) {
+		array_pop( $chars );
+		$line = rtrim( implode( '', $chars ), ' -' ) . '…';
+	}
+	return $line;
+}
+
+/**
+ * The space inside a tile: its own, or a tenth of its shorter side, between
+ * 22 and 40 pixels.
+ *
+ * @param array<string,mixed> $tile The tile.
+ * @param array<int,int>      $rect Where it is.
+ */
+function tile_padding( array $tile, array $rect ): int {
+	return (int) ( $tile['padding'] ?? max( 22, min( 40, (int) round( min( $rect[2], $rect[3] ) * 0.11 ) ) ) );
+}
+
+/**
+ * Where each tile of a grid is: its name => left, top, width and height.
+ *
+ * @param array<string,mixed> $bento  The grid: areas, columns, rows, gap.
+ * @param int                 $x      The grid's left.
+ * @param int                 $y      Its top.
+ * @param int                 $width  Its width.
+ * @param int                 $height Its height.
+ * @return array<string,array{0:int,1:int,2:int,3:int}>
+ */
+function areas( array $bento, int $x, int $y, int $width, int $height ): array {
+	$grid = array();
+	foreach ( (array) $bento['areas'] as $row ) {
+		$cells = preg_split( '/\s+/', trim( (string) $row ), -1, PREG_SPLIT_NO_EMPTY );
+		if ( $cells ) {
+			$grid[] = $cells;
+		}
+	}
+	if ( ! $grid ) {
+		return array();
+	}
+	$gap   = max( 0, (int) $bento['gap'] );
+	$count = max( array_map( 'count', $grid ) );
+	$cols  = tracks( (array) $bento['columns'], $count, $x, $width, $gap );
+	$rows  = tracks( (array) $bento['rows'], count( $grid ), $y, $height, $gap );
+
+	$spans = array();
+	foreach ( $grid as $r => $cells ) {
+		foreach ( $cells as $c => $name ) {
+			if ( '.' === $name ) {
+				continue;
+			}
+			$spans[ $name ] = isset( $spans[ $name ] )
+				? array( min( $spans[ $name ][0], $c ), min( $spans[ $name ][1], $r ), max( $spans[ $name ][2], $c ), max( $spans[ $name ][3], $r ) )
+				: array( $c, $r, $c, $r );
+		}
+	}
+	$rects = array();
+	foreach ( $spans as $name => [ $c0, $r0, $c1, $r1 ] ) {
+		$left           = (int) round( $cols[ $c0 ][0] );
+		$top            = (int) round( $rows[ $r0 ][0] );
+		$rects[ $name ] = array( $left, $top, (int) round( $cols[ $c1 ][1] ) - $left, (int) round( $rows[ $r1 ][1] ) - $top );
+	}
+	return $rects;
+}
+
+/**
+ * The start and end of each column or row: the length less the gaps, shared
+ * by the tracks' weights.
+ *
+ * @param array<int,mixed> $weights Shares, as CSS `fr`; equal if missing.
+ * @param int              $count   How many tracks.
+ * @param int              $start   Where the first begins.
+ * @param int              $length  The length of them all, gaps included.
+ * @param int              $gap     The gap between two.
+ * @return array<int,array{0:float,1:float}>
+ */
+function tracks( array $weights, int $count, int $start, int $length, int $gap ): array {
+	$weights = array_map( static fn( $w ): float => max( 0.05, (float) $w ), array_pad( array_slice( array_values( $weights ), 0, $count ), $count, 1 ) );
+	$sum     = array_sum( $weights );
+	$room    = max( $count, $length - ( $count - 1 ) * $gap );
+	$at      = (float) $start;
+	$out     = array();
+	foreach ( $weights as $weight ) {
+		$size  = $room * $weight / $sum;
+		$out[] = array( $at, $at + $size );
+		$at   += $size + $gap;
+	}
+	return $out;
+}
+
+/**
+ * A tile's ground: its gradient, its colour, or the card's background.
+ *
+ * @param array<string,mixed> $tile       The tile.
+ * @param int                 $width      Width.
+ * @param int                 $height     Height.
+ * @param string              $background The card's background.
+ */
+function tile_layer( array $tile, int $width, int $height, string $background ): \GdImage {
+	$gradient = array_values( array_filter( (array) ( $tile['gradient'] ?? array() ), 'is_string' ) );
+	if ( 2 === count( $gradient ) ) {
+		return Canvas\gradient( $width, $height, $gradient[0], $gradient[1] );
+	}
+	return Canvas\create( $width, $height, '' !== (string) ( $tile['background'] ?? '' ) ? (string) $tile['background'] : $background );
+}
+
+/**
+ * The size a picture takes inside a box, whole.
+ *
+ * @param \GdImage $image  The picture.
+ * @param int      $width  The box's width.
+ * @param int      $height Its height.
+ * @return array{0:int,1:int}
+ */
+function contain( \GdImage $image, int $width, int $height ): array {
+	$scale = min( $width / max( 1, imagesx( $image ) ), $height / max( 1, imagesy( $image ) ) );
+	return array( max( 1, (int) round( imagesx( $image ) * $scale ) ), max( 1, (int) round( imagesy( $image ) * $scale ) ) );
+}
+
+/**
+ * The headline tile: the kicker at its head, the title as large as it fits
+ * at its foot, and the line under the title below it.
+ *
+ * @param \GdImage            $canvas Canvas.
+ * @param array<string,mixed> $card   The card.
+ * @param array<string,mixed> $style  The style.
+ * @param array<string,mixed> $tile   The tile.
+ * @param array<int,int>      $rect   Where it is.
+ * @param int                 $pad    Space inside it.
+ */
+function tile_headline( \GdImage $canvas, array $card, array $style, array $tile, array $rect, int $pad ): void {
+	[ $x, $y, $w, $h ] = $rect;
+	$color             = (string) ( $tile['color'] ?? $style['title']['color'] );
+	$column            = $w - 2 * $pad;
+	$top               = $y + $pad;
+	$bottom            = $y + $h - $pad;
+
+	$kicker = (array) $style['kicker'];
+	$text   = trim( (string) ( $card['kicker'] ?? '' ) );
+	if ( '' !== $text && '' !== (string) $kicker['font'] ) {
+		$text = ! empty( $kicker['upper'] ) ? ( function_exists( 'mb_strtoupper' ) ? mb_strtoupper( $text ) : strtoupper( $text ) ) : $text;
+		$size = (float) $kicker['size'];
+		Canvas\tracked( $canvas, (string) $kicker['font'], $size, (string) ( $tile['kicker'] ?? $color ), $x + $pad, $top + (int) round( $size * 0.74 ), Canvas\shorten( (string) $kicker['font'], $size, $text, $column ), (float) $kicker['tracking'], (float) ( $tile['kicker_opacity'] ?? 1 ) );
+		$top += (int) round( $size * 0.74 ) + 28;
+	}
+
+	$subtitle = (array) $style['subtitle'];
+	$sub_text = trim( (string) ( $card['subtitle'] ?? '' ) );
+	if ( '' !== $sub_text && '' !== (string) $subtitle['font'] && $h >= 220 ) {
+		$size = min( (float) $subtitle['size'], 26.0 );
+		Canvas\text( $canvas, (string) $subtitle['font'], $size, $color, $x + $pad, $bottom - (int) round( $size * 0.2 ), parts( (string) $subtitle['font'], $size, $sub_text, $column ), (float) $subtitle['opacity'] );
+		$bottom -= (int) round( $size * 0.76 + 22 );
+	}
+
+	$title = array_merge(
+		(array) $style['title'],
+		array(
+			'sizes' => (array) ( $tile['sizes'] ?? array( 80, 30 ) ),
+			'lines' => (int) ( $tile['lines'] ?? 5 ),
+		)
+	);
+	$font  = (string) $title['font'];
+	$fit   = fit( $font, trim( (string) ( $card['title'] ?? '' ) ), $title, $column, $bottom - $top - 8 );
+	$size  = $fit['size'];
+	$line  = (int) round( $size * (float) $title['line'] );
+	$first = $bottom - (int) round( $size * 0.22 ) - ( count( $fit['lines'] ) - 1 ) * $line;
+	foreach ( $fit['lines'] as $i => $words ) {
+		Canvas\text( $canvas, $font, $size, $color, $x + $pad - (int) round( $size * 0.02 ), $first + $i * $line, clip( $font, $size, $words, $column ) );
+	}
+}
+
+/**
+ * A fact's tile: its label at the head, its value as large as it fits at
+ * the foot, as a dashboard shows a number.
+ *
+ * @param \GdImage            $canvas  Canvas.
+ * @param array<string,mixed> $style   The style.
+ * @param array<string,mixed> $tile    The tile.
+ * @param array<int,int>      $rect    Where it is.
+ * @param int                 $pad     Space inside it.
+ * @param array<string,mixed> $fact    The fact: label and value.
+ * @param int                 $largest The largest size its value may take,
+ *                                     or 0 for the tile's own.
+ */
+function tile_fact( \GdImage $canvas, array $style, array $tile, array $rect, int $pad, array $fact, int $largest = 0 ): void {
+	[ $x, $y, $w, $h ] = $rect;
+	$color             = (string) ( $tile['color'] ?? $style['title']['color'] );
+	$layout            = fact_fit( $style, $tile, $rect, $pad, $fact, $largest );
+
+	$label = trim( (string) ( $fact['label'] ?? '' ) );
+	$font  = (string) $style['meta']['font'];
+	if ( '' !== $label && '' !== $font ) {
+		Canvas\text( $canvas, $font, 20.0, $color, $x + $pad, $y + $pad + 15, Canvas\shorten( $font, 20.0, $label, $w - 2 * $pad ), (float) ( $tile['muted'] ?? 0.62 ) );
+	}
+
+	$font  = (string) $style['title']['font'];
+	$size  = $layout['fit']['size'];
+	$line  = (int) round( $size * 1.08 );
+	$first = $y + $h - $pad - (int) round( $size * 0.2 ) - ( count( $layout['fit']['lines'] ) - 1 ) * $line;
+	foreach ( $layout['fit']['lines'] as $i => $words ) {
+		Canvas\text( $canvas, $font, $size, $color, $x + $pad - (int) round( $size * 0.02 ), $first + $i * $line, clip( $font, $size, $words, $w - 2 * $pad ) );
+	}
+}
+
+/**
+ * The size and lines of a fact's value in its tile.
+ *
+ * @param array<string,mixed> $style   The style.
+ * @param array<string,mixed> $tile    The tile.
+ * @param array<int,int>      $rect    Where it is.
+ * @param int                 $pad     Space inside it.
+ * @param array<string,mixed> $fact    The fact.
+ * @param int                 $largest The largest size, or 0 for the tile's.
+ * @return array{fit:array{size:int,lines:string[]}}
+ */
+function fact_fit( array $style, array $tile, array $rect, int $pad, array $fact, int $largest ): array {
+	[ , , $w, $h ] = $rect;
+	$top           = $pad + ( '' !== trim( (string) ( $fact['label'] ?? '' ) ) ? 37 : 0 );
+	$sizes         = (array) ( $tile['sizes'] ?? array( min( 64, max( 28, (int) round( $h * 0.3 ) ) ), 22 ) );
+	if ( $largest > 0 ) {
+		$sizes[0] = min( (int) $sizes[0], $largest );
+	}
+	$title = array_merge(
+		(array) $style['title'],
+		array(
+			'sizes' => $sizes,
+			'lines' => 2,
+			'line'  => 1.08,
+		)
+	);
+	return array( 'fit' => fit( (string) $title['font'], trim( (string) ( $fact['value'] ?? '' ) ), $title, $w - 2 * $pad, $h - $pad - $top - 4 ) );
+}
+
+/**
+ * The logo's tile: the logo in its middle, as large as the logo's height and
+ * the tile allow; without a logo file, the site's name.
+ *
+ * @param \GdImage            $canvas Canvas.
+ * @param array<string,mixed> $style  The style.
+ * @param array<string,mixed> $tile   The tile.
+ * @param array<int,int>      $rect   Where it is.
+ * @param int                 $pad    Space inside it.
+ */
+function tile_logo( \GdImage $canvas, array $style, array $tile, array $rect, int $pad ): void {
+	[ $x, $y, $w, $h ] = $rect;
+	$logo              = (array) $style['logo'];
+	$image             = '' !== (string) ( $logo['file'] ?? '' ) ? Canvas\load( (string) $logo['file'] ) : null;
+	if ( $image ) {
+		[ $lw, $lh ] = contain( $image, $w - 2 * $pad, min( $h - 2 * $pad, (int) round( (int) $logo['height'] * 1.1 ) ) );
+		Canvas\place( $canvas, $image, $x + intdiv( $w - $lw, 2 ), $y + intdiv( $h - $lh, 2 ), $lw, $lh );
+		return;
+	}
+	$font = (string) ( $logo['font'] ?? '' );
+	if ( '' === $font || ! is_readable( $font ) ) {
+		return;
+	}
+	$size  = (float) ( $logo['size'] ?? 30 );
+	$words = trim( (string) ( $logo['text'] ?? '' ) );
+	while ( $size > 18 && Canvas\width( $font, $size, $words ) > $w - 2 * $pad ) {
+		$size -= 2;
+	}
+	$words = Canvas\shorten( $font, $size, $words, $w - 2 * $pad );
+	$width = Canvas\width( $font, $size, $words );
+	Canvas\text( $canvas, $font, $size, (string) ( $tile['color'] ?? $logo['color'] ?? '#ffffff' ), $x + intdiv( $w - $width, 2 ), $y + intdiv( $h, 2 ) + (int) round( $size * 0.36 ), $words );
+}
+
+/**
+ * A pattern's tile: rows of small squares at its foot, a few of them in the
+ * accent, picked from the title so each card has its own; and the address
+ * at its head, unless a fact already shows it.
+ *
+ * @param \GdImage            $canvas Canvas.
+ * @param array<string,mixed> $card   The card.
+ * @param array<string,mixed> $tile   The tile.
+ * @param array<int,int>      $rect   Where it is.
+ * @param int                 $pad    Space inside it.
+ * @param string[]            $shown  The values the card's facts show.
+ */
+function tile_pattern( \GdImage $canvas, array $card, array $tile, array $rect, int $pad, array $shown ): void {
+	[ $x, $y, $w, $h ] = $rect;
+	$color             = (string) ( $tile['color'] ?? '#ffffff' );
+	$top               = $y + $pad;
+
+	$label = trim( (string) ( $tile['label'] ?? $card['meta'] ?? '' ) );
+	$font  = (string) ( $tile['font'] ?? '' );
+	if ( '' !== $label && '' !== $font && is_readable( $font ) && ! in_array( $label, $shown, true ) && $h >= 150 ) {
+		$size = 20.0;
+		Canvas\text( $canvas, $font, $size, $color, $x + $pad, $top + (int) round( $size * 0.74 ), Canvas\shorten( $font, $size, $label, $w - 2 * $pad ), (float) ( $tile['muted'] ?? 0.62 ) );
+		$top += (int) round( $size * 0.74 ) + 24;
+	}
+
+	// Squares as large as the tile is, in up to three rows, or more in a
+	// tall tile, which they would otherwise leave empty.
+	$cell = max( 16, min( 26, (int) round( min( $w, $h ) / 14 ) ) );
+	$gap  = (int) round( $cell * 0.4 );
+	$cols = (int) floor( ( $w - 2 * $pad + $gap ) / ( $cell + $gap ) );
+	$rows = min( max( 3, (int) round( $h / ( $cell + $gap ) * 0.45 ) ), (int) floor( ( $y + $h - $pad - $top + $gap ) / ( $cell + $gap ) ) );
+	if ( $cols < 1 || $rows < 1 ) {
+		return;
+	}
+	$seed   = crc32( (string) ( $card['title'] ?? '' ) ) & 0x7fffffff;
+	$next   = static function () use ( &$seed ): int {
+		$seed = ( $seed * 1103515245 + 12345 ) & 0x7fffffff;
+		return $seed >> 8;
+	};
+	$muted  = (string) ( $tile['squares'] ?? $color );
+	$accent = (string) ( $tile['accent'] ?? $color );
+	$last   = $cols - 1 - $next() % max( 1, intdiv( $cols, 2 ) );
+	$left   = $x + $pad;
+	$bottom = $y + $h - $pad;
+	for ( $r = 0; $r < $rows; $r++ ) {
+		$count = $r === $rows - 1 && $rows > 1 ? $last : $cols;
+		$cy    = $bottom - ( $rows - $r ) * ( $cell + $gap ) + $gap;
+		for ( $c = 0; $c < $count; $c++ ) {
+			$lit = 0 === $next() % 7;
+			Canvas\rounded( $canvas, $left + $c * ( $cell + $gap ), $cy, $cell, $cell, array_fill( 0, 4, (int) round( $cell * 0.22 ) ), $lit ? $accent : $muted );
+		}
+	}
 }
