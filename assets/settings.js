@@ -193,6 +193,53 @@
 	colors( form );
 	images( form );
 
+	// Tiles: shown for a bento template, with a plan of its grid, the facts
+	// chosen named on it, and the space and corners as the sliders set them.
+	const tiles = document.getElementById( 'eightam-og-tiles' );
+	function tileState() {
+		if ( ! tiles ) {
+			return;
+		}
+		const picked = form.querySelector( 'input[name="' + config.option + '[template]"]:checked' );
+		tiles.hidden = ! picked || 'bento' !== picked.dataset.kind;
+		tiles.querySelectorAll( '.eightam-og__scheme' ).forEach( function ( scheme ) {
+			scheme.hidden = ! picked || scheme.dataset.layout !== picked.value;
+		} );
+		const scheme = picked ? tiles.querySelector( '.eightam-og__scheme[data-layout="' + picked.value + '"]' ) : null;
+		tiles.querySelectorAll( '.eightam-og__fact select' ).forEach( function ( select ) {
+			const field = select.parentNode.querySelector( '.eightam-og__field' );
+			field.hidden = 'field' !== select.value;
+			const option = select.options[ select.selectedIndex ];
+			const name = field.querySelector( 'input' ).value.trim();
+			const text = 'field' === select.value && name ? name : option.dataset.short || option.text;
+			tiles.querySelectorAll( '.eightam-og__cell[data-area="' + select.dataset.slot + '"]' ).forEach( function ( cell ) {
+				cell.textContent = text;
+			} );
+			// A fact the chosen grid has no tile for is not asked for.
+			const row = select.closest( '.eightam-og__fact-row' );
+			if ( row ) {
+				row.hidden = !! scheme && ! scheme.querySelector( '[data-area="' + select.dataset.slot + '"]' );
+			}
+		} );
+		tiles.querySelectorAll( 'input[type=range]' ).forEach( function ( range ) {
+			const output = range.parentNode.querySelector( 'output' );
+			if ( output ) {
+				output.textContent = range.value;
+			}
+		} );
+		const gap = tiles.querySelector( 'input[name="' + config.option + '[gap]"]' );
+		const radius = tiles.querySelector( 'input[name="' + config.option + '[radius]"]' );
+		const schemes = tiles.querySelector( '.eightam-og__schemes' );
+		if ( schemes && gap && radius ) {
+			// The plan is a quarter of the card's size.
+			schemes.style.setProperty( '--gap', Number( gap.value ) / 4 + 'px' );
+			schemes.style.setProperty( '--radius', Number( radius.value ) / 4 + 'px' );
+		}
+	}
+	form.addEventListener( 'input', tileState );
+	form.addEventListener( 'change', tileState );
+	tileState();
+
 	// What the server cannot do: done here, then the preview drawn again.
 	function base64( bytes ) {
 		let text = '';

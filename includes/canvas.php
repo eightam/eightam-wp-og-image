@@ -321,6 +321,121 @@ function rounded( \GdImage $canvas, int $x, int $y, int $width, int $height, arr
 }
 
 /**
+ * A canvas filled with a straight gradient from one colour to another, from
+ * the top left corner to the bottom right, as CSS draws `linear-gradient(to
+ * bottom right, from, to)`. Worked out at an eighth of the size and scaled
+ * up, which is smooth and cheap.
+ *
+ * @param int    $width  Width.
+ * @param int    $height Height.
+ * @param string $from   Colour at the top left.
+ * @param string $to     Colour at the bottom right.
+ */
+function gradient( int $width, int $height, string $from, string $to ): \GdImage {
+	$step  = 8;
+	$sw    = max( 2, (int) ceil( $width / $step ) + 1 );
+	$sh    = max( 2, (int) ceil( $height / $step ) + 1 );
+	$small = imagecreatetruecolor( $sw, $sh );
+	$a     = rgb( $from );
+	$b     = rgb( $to );
+	for ( $j = 0; $j < $sh; $j++ ) {
+		for ( $i = 0; $i < $sw; $i++ ) {
+			$t = ( $i / ( $sw - 1 ) + $j / ( $sh - 1 ) ) / 2;
+			imagesetpixel(
+				$small,
+				$i,
+				$j,
+				imagecolorallocate(
+					$small,
+					(int) round( $a[0] + ( $b[0] - $a[0] ) * $t ),
+					(int) round( $a[1] + ( $b[1] - $a[1] ) * $t ),
+					(int) round( $a[2] + ( $b[2] - $a[2] ) * $t )
+				)
+			);
+		}
+	}
+	$large  = imagescale( $small, $sw * $step, $sh * $step, IMG_BILINEAR_FIXED );
+	$canvas = create( $width, $height, $from );
+	if ( $large instanceof \GdImage ) {
+		imagecopyresampled( $canvas, $large, 0, 0, $step / 2, $step / 2, $width, $height, ( $sw - 1 ) * $step, ( $sh - 1 ) * $step );
+	}
+	return $canvas;
+}
+
+/**
+ * A picture copied onto the canvas with its corners rounded, smooth at the
+ * edges: the picture whole, then each corner's pixels laid over what was
+ * under them by how much of each the quarter circle covers.
+ *
+ * @param \GdImage $canvas Canvas.
+ * @param \GdImage $layer  The picture, as large as it is drawn.
+ * @param int      $x      Left.
+ * @param int      $y      Top.
+ * @param int      $radius Corner radius.
+ */
+function paste_rounded( \GdImage $canvas, \GdImage $layer, int $x, int $y, int $radius ): void {
+	$w = imagesx( $layer );
+	$h = imagesy( $layer );
+	$r = (int) max( 0, min( $radius, intdiv( $w, 2 ), intdiv( $h, 2 ) ) );
+
+	// What lies under the corners, before the picture covers it.
+	$under   = array();
+	$corners = array(
+		array( 0, 0, $r, $r ),
+		array( $w - $r, 0, $w - $r, $r ),
+		array( $w - $r, $h - $r, $w - $r, $h - $r ),
+		array( 0, $h - $r, $r, $h - $r ),
+	);
+	$cw = imagesx( $canvas );
+	$ch = imagesy( $canvas );
+	foreach ( $corners as $c => [ $left, $top ] ) {
+		for ( $j = 0; $j < $r; $j++ ) {
+			for ( $i = 0; $i < $r; $i++ ) {
+				$px = $x + $left + $i;
+				$py = $y + $top + $j;
+				if ( $px >= 0 && $py >= 0 && $px < $cw && $py < $ch ) {
+					$under[ $c ][ $j ][ $i ] = imagecolorat( $canvas, $px, $py );
+				}
+			}
+		}
+	}
+
+	imagecopy( $canvas, $layer, $x, $y, 0, 0, $w, $h );
+	if ( ! $r ) {
+		return;
+	}
+
+	foreach ( $corners as $c => [ $left, $top, $cx, $cy ] ) {
+		for ( $j = 0; $j < $r; $j++ ) {
+			for ( $i = 0; $i < $r; $i++ ) {
+				if ( ! isset( $under[ $c ][ $j ][ $i ] ) ) {
+					continue;
+				}
+				$lx = $left + $i;
+				$ly = $top + $j;
+				// How far the pixel's centre is from the circle's, against
+				// its radius: inside by half a pixel or more is all picture.
+				$d     = sqrt( ( $lx + 0.5 - $cx ) ** 2 + ( $ly + 0.5 - $cy ) ** 2 );
+				$cover = max( 0.0, min( 1.0, $r - $d + 0.5 ) );
+				if ( $cover >= 1.0 ) {
+					continue;
+				}
+				$o = $under[ $c ][ $j ][ $i ];
+				$p = imagecolorat( $layer, $lx, $ly );
+				imagesetpixel(
+					$canvas,
+					$x + $lx,
+					$y + $ly,
+					( (int) round( ( $o >> 16 & 255 ) + ( ( $p >> 16 & 255 ) - ( $o >> 16 & 255 ) ) * $cover ) << 16 )
+					| ( (int) round( ( $o >> 8 & 255 ) + ( ( $p >> 8 & 255 ) - ( $o >> 8 & 255 ) ) * $cover ) << 8 )
+					| (int) round( ( $o & 255 ) + ( ( $p & 255 ) - ( $o & 255 ) ) * $cover )
+				);
+			}
+		}
+	}
+}
+
+/**
  * Text as GD takes it: UTF-8 with every ampersand written as an entity,
  * since GD reads `&#8217;` and `&amp;` in a string as the characters they
  * name.

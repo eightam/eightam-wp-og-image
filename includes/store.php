@@ -79,6 +79,7 @@ function fingerprint( array $card, array $style ): string {
 					$card['kicker'],
 					$card['subtitle'],
 					$card['meta'],
+					$card['facts'] ?? array(),
 					'' !== $photo ? array( wp_basename( $photo ), (int) @filesize( $photo ), $card['photo']['focus'] ) : null, // phpcs:ignore WordPress.PHP.NoSilencedErrors
 					$style,
 					$files,

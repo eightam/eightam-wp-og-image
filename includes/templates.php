@@ -12,6 +12,12 @@
  *   light type over it.
  * - Brand colour: the accent as the background, the photograph beside it.
  *
+ * And four bento templates, the card divided into tiles with rounded corners
+ * (includes/template.php, draw_bento()): Bento, Mosaic, Magazine and
+ * Banner, each a different grid of the same tiles — the title, the
+ * photograph, the logo and one or two facts — in a dark, light or brand
+ * colour tone.
+ *
  * A template turns the settings and the brand into a style; the colours and
  * typefaces an administrator picked win over the brand's.
  *
@@ -31,11 +37,73 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * The templates, as slug => label and description.
+ * The templates, as slug => label, description and kind (`classic` or
+ * `bento`).
+ *
+ * @return array<string,array{label:string,description:string,kind:string}>
+ */
+function all(): array {
+	$classic = array_map( static fn( array $t ): array => $t + array( 'kind' => 'classic' ), classic() );
+	$bento   = array_map( static fn( array $t ): array => $t + array( 'kind' => 'bento' ), array_map( static fn( array $l ): array => array_intersect_key( $l, array_flip( array( 'label', 'description' ) ) ), layouts() ) );
+	return $classic + $bento;
+}
+
+/**
+ * Whether a template is one of the bento templates.
+ *
+ * @param string $template Template.
+ */
+function is_bento( string $template ): bool {
+	return isset( layouts()[ $template ] );
+}
+
+/**
+ * The bento templates: each a grid of named tiles, as
+ * Template\draw_bento() takes it. `head` is the title's tile, `photo` the
+ * photograph's, `logo` the logo's, `fact1` and `fact2` the facts chosen in
+ * the settings.
+ *
+ * @return array<string,array{label:string,description:string,areas:string[],columns:float[],rows:float[]}>
+ */
+function layouts(): array {
+	return array(
+		'bento'    => array(
+			'label'       => __( 'Bento', 'eightam-og-image' ),
+			'description' => __( 'The title on a large tile; the logo, a fact and the photograph beside it.', 'eightam-og-image' ),
+			'areas'       => array( 'head head logo fact1', 'head head photo photo' ),
+			'columns'     => array(),
+			'rows'        => array(),
+		),
+		'mosaic'   => array(
+			'label'       => __( 'Mosaic', 'eightam-og-image' ),
+			'description' => __( 'The photograph down the left; the title, the logo and two facts beside it.', 'eightam-og-image' ),
+			'areas'       => array( 'photo photo head head head', 'photo photo head head head', 'photo photo logo fact1 fact2' ),
+			'columns'     => array(),
+			'rows'        => array( 1, 1, 1.1 ),
+		),
+		'magazine' => array(
+			'label'       => __( 'Magazine', 'eightam-og-image' ),
+			'description' => __( 'The title across, the photograph down the right; the logo and two facts below.', 'eightam-og-image' ),
+			'areas'       => array( 'head head head photo', 'head head head photo', 'logo fact1 fact2 photo' ),
+			'columns'     => array( 1, 1, 1, 1.25 ),
+			'rows'        => array( 1, 1, 1.05 ),
+		),
+		'banner'   => array(
+			'label'       => __( 'Banner', 'eightam-og-image' ),
+			'description' => __( 'The photograph across the top; the title, the logo and a fact below it.', 'eightam-og-image' ),
+			'areas'       => array( 'photo photo photo logo', 'head head head fact1' ),
+			'columns'     => array(),
+			'rows'        => array( 0.85, 1.15 ),
+		),
+	);
+}
+
+/**
+ * The classic templates, as slug => label and description.
  *
  * @return array<string,array{label:string,description:string}>
  */
-function all(): array {
+function classic(): array {
 	return array(
 		'spotlight' => array(
 			'label'       => __( 'Spotlight', 'eightam-og-image' ),
@@ -74,10 +142,15 @@ function style( array $settings, array $brand, $subject = null ): array {
 	$accent2  = Brand\hex( (string) $c['accent2'] );
 
 	// The background each template starts from, unless one was picked.
+	$tone       = tone( $settings, $template );
 	$background = Brand\hex( (string) $settings['background'] ) ?: match ( $template ) {
 		'paper' => $light,
 		'bold'  => $accent,
-		default => $dark,
+		default => is_bento( $template ) ? match ( $tone ) {
+			'light' => Brand\mix( $light, $dark, 0.07 ),
+			'brand' => $accent,
+			default => $dark,
+		} : $dark,
 	};
 	$on_dark = Brand\is_dark( $background );
 
@@ -163,7 +236,154 @@ function style( array $settings, array $brand, $subject = null ): array {
 
 	$style['logo'] = logo( $settings, $brand, $template, $background, $light, $fonts['title'], $subject );
 	$style['mark'] = mark( $settings, $brand );
+
+	if ( is_bento( $template ) ) {
+		$style = bento( $style, $settings, $brand, $template, $tone, $subject );
+	}
 	return $style;
+}
+
+/**
+ * The tone of a bento template: dark, light, or the brand's accent.
+ *
+ * @param array<string,mixed> $settings Settings.
+ * @param string              $template Template.
+ */
+function tone( array $settings, string $template ): string {
+	$tone = (string) ( $settings['tone'] ?? 'dark' );
+	return is_bento( $template ) && in_array( $tone, array( 'dark', 'light', 'brand' ), true ) ? $tone : 'dark';
+}
+
+/**
+ * A bento template's style: its grid, and each tile's colours, worked out
+ * from the card's background so every tile reads on it.
+ *
+ * The tiles are a step lighter than a dark background, and a step lighter
+ * or darker than a light one; the title's tile is filled with the accent,
+ * flat or as a gradient, where light or dark type reads on all of it.
+ *
+ * @param array<string,mixed> $style    The style so far.
+ * @param array<string,mixed> $settings Settings.
+ * @param array<string,mixed> $brand    Brand.
+ * @param string              $template Template.
+ * @param string              $tone     Tone.
+ * @param mixed               $subject  What the card is of.
+ * @return array<string,mixed>
+ */
+function bento( array $style, array $settings, array $brand, string $template, string $tone, $subject ): array {
+	$c          = (array) $brand['colors'];
+	$dark       = Brand\hex( (string) $c['dark'] ) ?: '#161616';
+	$light      = Brand\hex( (string) $c['light'] ) ?: '#ffffff';
+	$accent     = Brand\hex( (string) $settings['accent'] ) ?: ( Brand\hex( (string) $c['accent'] ) ?: '#3858e9' );
+	$accent2    = Brand\hex( (string) $c['accent2'] );
+	$background = (string) $style['background'];
+	$layout     = layouts()[ $template ];
+
+	$tile = Brand\is_dark( $background )
+		? Brand\mix( $background, '#ffffff', 0.08 )
+		: ( Brand\luminance( $background ) > 0.9 ? Brand\mix( $background, $dark, 0.05 ) : Brand\mix( $background, '#ffffff', 0.7 ) );
+	$on_tile = Brand\hex( (string) $settings['text'] ) ?: type_on( $tile, $brand );
+
+	// The title's tile: the accent, flat or as a gradient, or a tile like
+	// the others. On the brand tone the accent is the background already,
+	// so the title's tile is the dark colour instead.
+	$fill = (string) ( $settings['head_fill'] ?? 'gradient' );
+	$base = 'brand' === $tone || Brand\contrast( $background, $accent ) < 1.3 ? ( Brand\is_dark( $background ) ? Brand\mix( $dark, '#ffffff', 0.16 ) : $dark ) : $accent;
+	$head = array( 'background' => $base );
+	if ( 'tile' === $fill ) {
+		$head = array( 'background' => $tile );
+	} elseif ( 'gradient' === $fill ) {
+		$end = '' !== $accent2 && 'brand' !== $tone && Brand\distance( $accent, $accent2 ) > 40 && $base === $accent ? $accent2 : Brand\mix( $base, Brand\is_dark( $base ) ? '#000000' : '#ffffff', 0.3 );
+		$end = Brand\mix( $base, $end, 0.85 );
+		if ( worst( array( $base, $end ), type_on( $base, $brand ) ) >= 3 ) {
+			$head = array( 'gradient' => array( $base, $end ) );
+		}
+	}
+	$head_ground = $head['gradient'] ?? array( $head['background'] );
+	$on_head     = Brand\hex( (string) $settings['text'] ) && worst( $head_ground, (string) $settings['text'] ) >= 3 ? Brand\hex( (string) $settings['text'] ) : type_on( $head_ground[0], $brand, $head_ground );
+	$kicker      = (string) $style['kicker']['color'];
+	$kicker      = 'tile' === $fill && worst( $head_ground, $kicker ) >= 3 ? $kicker : $on_head;
+
+	// The logo on a tile of the light colour where it would not read on
+	// the others, as the classic templates hang it on a tab.
+	$logo     = logo( $settings, $brand, $template, $tile, $light, (string) $style['title']['font'], $subject );
+	$logo_bg  = '' !== (string) $logo['tab'] ? (string) $logo['tab'] : $tile;
+	$logo_box = array(
+		'content'    => 'logo',
+		'background' => $logo_bg,
+		'color'      => type_on( $logo_bg, $brand ),
+	);
+	$logo['tab'] = '';
+
+	$pattern_accent = Brand\readable( $tile, array_filter( array( $accent, $accent2, $on_tile ) ), 1.6 );
+	$plain          = array(
+		'background' => $tile,
+		'color'      => $on_tile,
+		'muted'      => 0.62,
+		'font'       => (string) $style['meta']['font'],
+		'squares'    => Brand\mix( $tile, $on_tile, 0.12 ),
+		'accent'     => $pattern_accent,
+	);
+
+	$gap = max( 0, min( 40, (int) ( $settings['gap'] ?? 16 ) ) );
+
+	$style['layout'] = 'bento';
+	$style['logo']   = $logo;
+	$style['bento']  = array(
+		'areas'   => $layout['areas'],
+		'columns' => $layout['columns'],
+		'rows'    => $layout['rows'],
+		'gap'     => $gap,
+		'padding' => min( 40, 2 * $gap ),
+		'radius'  => max( 0, min( 48, (int) ( $settings['radius'] ?? 24 ) ) ),
+		'tiles'   => array(
+			'head'  => $head + array(
+				'content'        => 'headline',
+				'color'          => $on_head,
+				'kicker'         => $kicker,
+				'kicker_opacity' => $kicker === $on_head ? 0.82 : 1,
+				'sizes'          => 'banner' === $template ? array( 72, 30 ) : array( 76, 30 ),
+			),
+			'logo'  => $logo_box,
+			'photo' => $plain + array( 'content' => 'photo' ),
+			'fact1' => $plain + array( 'content' => 'fact1' ),
+			'fact2' => $plain + array( 'content' => 'fact2' ),
+		),
+	);
+	return $style;
+}
+
+/**
+ * The type colour that reads on a ground: the brand's light or dark type.
+ *
+ * @param string   $ground The colour under it.
+ * @param array    $brand  Brand.
+ * @param string[] $all    Every colour under it, for a gradient: the type
+ *                         must read on the worst of them.
+ */
+function type_on( string $ground, array $brand, array $all = array() ): string {
+	$c          = (array) $brand['colors'];
+	$candidates = Brand\is_dark( $ground )
+		? array( (string) $c['light'], '#ffffff' )
+		: array( (string) $c['heading'], (string) $c['dark'], (string) $c['text'], '#111111' );
+	$all        = $all ? $all : array( $ground );
+	foreach ( $candidates as $color ) {
+		$color = Brand\hex( $color );
+		if ( '' !== $color && worst( $all, $color ) >= 4.5 ) {
+			return $color;
+		}
+	}
+	return worst( $all, '#ffffff' ) >= worst( $all, '#111111' ) ? '#ffffff' : '#111111';
+}
+
+/**
+ * The lowest contrast a colour has against any of some others.
+ *
+ * @param string[] $grounds Colours.
+ * @param string   $color   The colour on them.
+ */
+function worst( array $grounds, string $color ): float {
+	return min( array_map( static fn( string $g ): float => Brand\contrast( $g, $color ), $grounds ) );
 }
 
 /**

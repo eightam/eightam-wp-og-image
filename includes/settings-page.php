@@ -142,15 +142,103 @@ function page(): void {
 				<?php settings_fields( 'eightam_og_image' ); ?>
 
 				<h2><?php esc_html_e( 'Template', 'eightam-og-image' ); ?></h2>
-				<div class="eightam-og__templates">
-					<?php foreach ( Templates\all() as $slug => $template ) : ?>
-						<label class="eightam-og__template">
-							<input type="radio" name="<?php echo esc_attr( $name( 'template' ) ); ?>" value="<?php echo esc_attr( $slug ); ?>" <?php checked( $s['template'], $slug ); ?> />
-							<img src="" data-template="<?php echo esc_attr( $slug ); ?>" alt="" width="600" height="315" loading="lazy" />
-							<strong><?php echo esc_html( $template['label'] ); ?></strong>
-							<span><?php echo esc_html( $template['description'] ); ?></span>
-						</label>
-					<?php endforeach; ?>
+				<?php
+				foreach (
+					array(
+						'classic' => __( 'Classic: the title over the whole card', 'eightam-og-image' ),
+						'bento'   => __( 'Bento: the card in tiles', 'eightam-og-image' ),
+					) as $kind => $heading
+				) :
+					?>
+					<h3 class="eightam-og__kind"><?php echo esc_html( $heading ); ?></h3>
+					<div class="eightam-og__templates">
+						<?php foreach ( Templates\all() as $slug => $template ) : ?>
+							<?php
+							if ( $kind !== $template['kind'] ) {
+								continue;
+							}
+							?>
+							<label class="eightam-og__template">
+								<input type="radio" name="<?php echo esc_attr( $name( 'template' ) ); ?>" value="<?php echo esc_attr( $slug ); ?>" data-kind="<?php echo esc_attr( $kind ); ?>" <?php checked( $s['template'], $slug ); ?> />
+								<img src="" data-template="<?php echo esc_attr( $slug ); ?>" alt="" width="600" height="315" loading="lazy" />
+								<strong><?php echo esc_html( $template['label'] ); ?></strong>
+								<span><?php echo esc_html( $template['description'] ); ?></span>
+							</label>
+						<?php endforeach; ?>
+					</div>
+				<?php endforeach; ?>
+
+				<div class="eightam-og__tiles" id="eightam-og-tiles" <?php echo Templates\is_bento( (string) $s['template'] ) ? '' : 'hidden'; ?>>
+					<h2><?php esc_html_e( 'Tiles', 'eightam-og-image' ); ?></h2>
+					<p class="description"><?php esc_html_e( 'What the bento templates show on their tiles. A tile with nothing to show — a page without a photograph, or a fact a page lacks — shows the mark or a pattern of squares instead.', 'eightam-og-image' ); ?></p>
+					<div class="eightam-og__tiles-layout">
+						<div class="eightam-og__schemes" aria-hidden="true">
+							<?php tile_schemes( (string) $s['template'], $s ); ?>
+						</div>
+						<table class="form-table" role="presentation">
+							<?php
+							choice_row(
+								$name( 'tone' ),
+								(string) $s['tone'],
+								__( 'Tone', 'eightam-og-image' ),
+								array(
+									'dark'  => __( 'Dark', 'eightam-og-image' ),
+									'light' => __( 'Light', 'eightam-og-image' ),
+									'brand' => __( 'The accent colour', 'eightam-og-image' ),
+								)
+							);
+							choice_row(
+								$name( 'head_fill' ),
+								(string) $s['head_fill'],
+								__( 'Title tile', 'eightam-og-image' ),
+								array(
+									'gradient' => __( 'The accent, as a gradient', 'eightam-og-image' ),
+									'accent'   => __( 'The accent, flat', 'eightam-og-image' ),
+									'tile'     => __( 'Like the other tiles', 'eightam-og-image' ),
+								)
+							);
+							foreach (
+								array(
+									'fact1' => __( 'Fact 1', 'eightam-og-image' ),
+									'fact2' => __( 'Fact 2', 'eightam-og-image' ),
+								) as $slot => $label
+							) :
+								$id = 'eightam-og-' . $slot;
+								?>
+								<tr class="eightam-og__fact-row" data-slot="<?php echo esc_attr( $slot ); ?>">
+									<th scope="row"><label for="<?php echo esc_attr( $id ); ?>"><?php echo esc_html( $label ); ?></label></th>
+									<td class="eightam-og__fact">
+										<select id="<?php echo esc_attr( $id ); ?>" name="<?php echo esc_attr( $name( $slot ) ); ?>" data-slot="<?php echo esc_attr( $slot ); ?>">
+											<?php foreach ( fact_kinds() as $kind => $text ) : ?>
+												<option value="<?php echo esc_attr( $kind ); ?>" data-short="<?php echo esc_attr( fact_short_names()[ $kind ] ?? $text ); ?>" <?php selected( $s[ $slot ], $kind ); ?>><?php echo esc_html( $text ); ?></option>
+											<?php endforeach; ?>
+										</select>
+										<span class="eightam-og__field" <?php echo 'field' === $s[ $slot ] ? '' : 'hidden'; ?>>
+											<input type="text" class="code" name="<?php echo esc_attr( $name( $slot . '_field' ) ); ?>" value="<?php echo esc_attr( (string) $s[ $slot . '_field' ] ); ?>" placeholder="<?php esc_attr_e( 'field_name', 'eightam-og-image' ); ?>" aria-label="<?php esc_attr_e( 'Field name', 'eightam-og-image' ); ?>" />
+										</span>
+										<input type="text" name="<?php echo esc_attr( $name( $slot . '_label' ) ); ?>" value="<?php echo esc_attr( (string) $s[ $slot . '_label' ] ); ?>" placeholder="<?php esc_attr_e( 'Its own label', 'eightam-og-image' ); ?>" aria-label="<?php esc_attr_e( 'Label', 'eightam-og-image' ); ?>" />
+									</td>
+								</tr>
+							<?php endforeach; ?>
+							<?php
+							foreach (
+								array(
+									'gap'    => array( __( 'Space between tiles', 'eightam-og-image' ), 40 ),
+									'radius' => array( __( 'Corner radius', 'eightam-og-image' ), 48 ),
+								) as $key => [ $label, $max ]
+							) :
+								?>
+								<tr>
+									<th scope="row"><label for="eightam-og-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
+									<td>
+										<input type="range" id="eightam-og-<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $name( $key ) ); ?>" min="0" max="<?php echo esc_attr( (string) $max ); ?>" step="2" value="<?php echo esc_attr( (string) $s[ $key ] ); ?>" />
+										<output for="eightam-og-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( (string) $s[ $key ] ); ?></output> px
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</table>
+					</div>
+					<p class="description"><?php esc_html_e( 'A custom field is read with ACF where ACF is active, so a select, a relationship or a date shows as ACF formats it; otherwise as the post’s meta. Its label is the field’s own unless you give one.', 'eightam-og-image' ); ?></p>
 				</div>
 
 				<h2><?php esc_html_e( 'Colours', 'eightam-og-image' ); ?></h2>
@@ -406,6 +494,60 @@ function page(): void {
 		</div>
 	</div>
 	<?php
+}
+
+/**
+ * A plan of each bento template's grid, its tiles named: the one chosen
+ * shown, the rest hidden until chosen.
+ *
+ * @param string              $chosen   The template chosen.
+ * @param array<string,mixed> $settings Settings.
+ */
+function tile_schemes( string $chosen, array $settings ): void {
+	$short = fact_short_names();
+	$fact  = static fn( string $slot ): string => 'field' === $settings[ $slot ] && '' !== (string) $settings[ $slot . '_field' ] ? (string) $settings[ $slot . '_field' ] : ( $short[ (string) $settings[ $slot ] ] ?? $slot );
+	$names = array(
+		'head'  => __( 'Title', 'eightam-og-image' ),
+		'photo' => __( 'Photograph', 'eightam-og-image' ),
+		'logo'  => __( 'Logo', 'eightam-og-image' ),
+		'fact1' => $fact( 'fact1' ),
+		'fact2' => $fact( 'fact2' ),
+	);
+	$track = static fn( array $weights, int $count ): string => implode( ' ', array_map( static fn( $w ): string => (float) $w . 'fr', array_pad( $weights, $count, 1 ) ) );
+	foreach ( Templates\layouts() as $slug => $layout ) {
+		$rows  = array_map( static fn( string $row ): array => preg_split( '/\s+/', trim( $row ) ), $layout['areas'] );
+		$style = sprintf(
+			'grid-template-areas:%s;grid-template-columns:%s;grid-template-rows:%s',
+			implode( ' ', array_map( static fn( string $row ): string => '"' . $row . '"', $layout['areas'] ) ),
+			$track( $layout['columns'], count( $rows[0] ) ),
+			$track( $layout['rows'], count( $rows ) )
+		);
+		?>
+		<div class="eightam-og__scheme" data-layout="<?php echo esc_attr( $slug ); ?>" style="<?php echo esc_attr( $style ); ?>" <?php echo $chosen === $slug ? '' : 'hidden'; ?>>
+			<?php foreach ( array_unique( array_merge( ...$rows ) ) as $area ) : ?>
+				<span class="eightam-og__cell is-<?php echo esc_attr( $area ); ?>" style="grid-area:<?php echo esc_attr( $area ); ?>" data-area="<?php echo esc_attr( $area ); ?>"><?php echo esc_html( $names[ $area ] ?? $area ); ?></span>
+			<?php endforeach; ?>
+		</div>
+		<?php
+	}
+}
+
+/**
+ * The facts' names as short as the plan of a grid has room for.
+ *
+ * @return array<string,string>
+ */
+function fact_short_names(): array {
+	return array(
+		'date'    => __( 'Date', 'eightam-og-image' ),
+		'author'  => __( 'Author', 'eightam-og-image' ),
+		'term'    => __( 'Category', 'eightam-og-image' ),
+		'type'    => __( 'Kind', 'eightam-og-image' ),
+		'reading' => __( 'Reading time', 'eightam-og-image' ),
+		'site'    => __( 'Site name', 'eightam-og-image' ),
+		'host'    => __( 'Address', 'eightam-og-image' ),
+		'field'   => __( 'Field', 'eightam-og-image' ),
+	);
 }
 
 /**
