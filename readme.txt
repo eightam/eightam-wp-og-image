@@ -4,7 +4,7 @@ Tags: open graph, og:image, social sharing, share image, twitter card
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.4.0
+Stable tag: 1.4.1
 License: GPLv2 or later
 
 A share image for every page, drawn from one template: the logo, the title, a bar of colour and the featured image, or the page's first picture without one. Drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it.
@@ -156,6 +156,9 @@ GD is on every server WordPress runs on, and draws a card in a tenth of a second
 In the editor: "Words on the card" in the Share image panel. In code: `eightam_og_image_card`.
 
 == Changelog ==
+
+= 1.4.1 =
+* A password-protected post's excerpt is left off its card for every visitor. Before, a visitor who had entered the password could have the card drawn during their visit with the excerpt under the title, in a public file.
 
 = 1.4.0 =
 * Four bento templates — Bento, Mosaic, Magazine and Banner: the card divided into tiles with rounded corners, showing the title, the photograph, the logo and one or two facts.

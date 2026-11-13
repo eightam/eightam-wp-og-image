@@ -356,7 +356,9 @@ function setting_card( $card, $subject ): array {
 			'date'        => $date,
 			'author'      => $author,
 			'author_date' => implode( ' · ', array_filter( array( $author, $date ) ) ),
-			'excerpt'     => post_password_required( $subject ) ? '' : words( (string) get_the_excerpt( $subject ) ),
+			// A protected post's excerpt stays behind its password, whoever
+			// is viewing: the card is a public file.
+			'excerpt'     => '' !== $subject->post_password ? '' : words( (string) get_the_excerpt( $subject ) ),
 			default       => '',
 		};
 	}
