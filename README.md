@@ -16,11 +16,20 @@ Requires WordPress 6.7 and PHP 8.1 with GD and FreeType. See [readme.txt](readme
 
 ## Install and update
 
-Download `eightam-og-image.zip` from the [latest release](https://github.com/eightam/eightam-wp-og-image/releases/latest) and upload it under Plugins → Add New. From then on WordPress offers each new release on the Plugins screen, and installs it automatically if auto-updates are turned on for the plugin.
+Install `https://eightam-wp.b-cdn.net/eightam-og-image/eightam-og-image.zip` (always the newest version) under Plugins → Add New, or through the 8am Toolkit. From then on WordPress offers each new version on the Plugins screen, and installs it automatically if auto-updates are turned on. The updater (`includes/updater.php`) reads `https://eightam-wp.b-cdn.net/eightam-og-image/latest.json`, at most every 12 hours.
+
+Installs on 1.4.1 or older update from GitHub releases. Each release still carries `eightam-og-image.zip`, so they update once from GitHub to the first version with the CDN updater, and from the CDN after that.
 
 ## Releasing
 
-Raise the version in all three places — `Version:` in the header and `VERSION` in `eightam-og-image.php`, `Stable tag:` in `readme.txt` — and add a changelog entry under `== Changelog ==` in `readme.txt`. When that lands on `main`, the [Release workflow](.github/workflows/release.yml) checks the code, builds `eightam-og-image.zip` and publishes it as release `v{version}` with the changelog entry as its notes. A push that does not raise the version releases nothing; versions that disagree fail the run.
+Never edit a version number by hand: [release-please](https://github.com/googleapis/release-please) owns them. Squash-merge every PR with a Conventional Commit title, which becomes the changelog line:
+
+- `fix:` patch, `feat:` minor, `feat!:` or a `BREAKING CHANGE:` footer major;
+- `chore:` `docs:` `ci:` `refactor:` `test:` release nothing.
+
+release-please keeps a release PR open that bumps `Version:` and `VERSION` in `eightam-og-image.php` and writes `CHANGELOG.md`. Merging it tags `vX.Y.Z` and creates the GitHub Release; the [Release workflow](.github/workflows/release.yml) then builds the zip with `git archive` (exclusions in `.gitattributes`), attaches it to the release, and uploads it with `latest.json` (`scripts/build-manifest.mjs`) to Bunny Storage `eightam-wp/eightam-og-image/`. Running the workflow by hand republishes the version on `main` to Bunny.
+
+Tests: `php tests/run.php`.
 
 ## License
 

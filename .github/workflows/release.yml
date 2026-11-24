@@ -1,16 +1,22 @@
-# A release for every new version.
-#
-# On every push to main, the version in the plugin's header is compared with
-# the newest release tag. When it is higher, the plugin is checked, packed as
-# eightam-og-image.zip (a folder named eightam-og-image, without what
-# .gitattributes marks export-ignore) and published as release v{version},
-# with that version's changelog from readme.txt as its notes. Sites running
-# the plugin find it there (includes/updater.php).
-#
-# The header's Version, the VERSION constant and the readme's Stable tag must
-# agree, or the run fails.
-
 name: Release
+
+# Push to main: release-please keeps a release PR up to date. Merging it tags
+# vX.Y.Z and creates the GitHub Release; the publish job then builds the ZIP,
+# attaches it to the release and uploads it + latest.json to Bunny Storage.
+# Installed plugins and the 8am Toolkit read https://eightam-wp.b-cdn.net/eightam-og-image/latest.json.
+# eightam-og-image/eightam-og-image.zip is a stable "latest" alias for installers (RunCloud Canvas).
+#
+# The ZIP is also attached as eightam-og-image.zip, which installs on 1.4.1 and
+# older look for: their GitHub updater takes them to the first Bunny release.
+#
+# workflow_dispatch: (re)publish the version on main to Bunny (e.g. first upload).
+#
+# Secrets:
+#   BUNNY_STORAGE_ZONE    storage zone name, or full URL https://<region>.storage.bunnycdn.com/<zone>
+#                         (optional, defaults to eightam-wp in Falkenstein)
+#   BUNNY_SECRET          storage zone password (write key); BUNNY_STORAGE_KEY is accepted too
+#   RELEASE_PLEASE_TOKEN  optional PAT so CI runs on release PRs
+#   BUNNY_API_KEY         optional account API key: purges the eightam-og-image.zip alias on the pull zone
 
 on:
   push:
@@ -19,77 +25,128 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: release
   cancel-in-progress: false
 
+env:
+  SLUG: eightam-og-image
+  PULL_ZONE: https://eightam-wp.b-cdn.net
+
 jobs:
-  release:
+  release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
     steps:
-      - uses: actions/checkout@v4
+      - id: rp
+        uses: googleapis/release-please-action@v4
         with:
-          fetch-depth: 0
+          # Optional fine-grained PAT (contents + pull-requests: write) so CI runs on the release PR.
+          # Without it, GITHUB_TOKEN is used and the release PR gets no CI run.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
-      - name: Read the version
-        id: version
+  publish:
+    needs: release-please
+    if: always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build ZIP + manifest
+        id: build
         run: |
-          header=$(sed -n 's/^ \* Version: *//p' eightam-og-image.php | tr -d '[:space:]')
-          constant=$(sed -n "s/^const VERSION = '\([^']*\)';/\1/p" eightam-og-image.php)
-          stable=$(sed -n 's/^Stable tag: *//p' readme.txt | tr -d '[:space:]')
-          echo "Header $header, constant $constant, stable tag $stable"
-          if [ -z "$header" ] || [ "$header" != "$constant" ] || [ "$header" != "$stable" ]; then
-            echo "::error::Version, VERSION and Stable tag must be the same."
-            exit 1
+          set -euo pipefail
+          VERSION=$(node scripts/build-manifest.mjs --print-version)
+          if [ -n "$TAG" ] && [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Tag $TAG does not match plugin version $VERSION"; exit 1
           fi
-          latest=$(git tag --list 'v*' | sed 's/^v//' | sort -V | tail -n1)
-          echo "Newest release: ${latest:-none}"
-          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$header" | sort -V | tail -n1)" = "$latest" ]; then
-            echo "Not higher than the newest release: nothing to do."
-            echo "release=false" >> "$GITHUB_OUTPUT"
+          # git archive honours .gitattributes export-ignore.
+          mkdir -p dist
+          git archive --format=zip --prefix="$SLUG/" -o "dist/$SLUG-$VERSION.zip" HEAD
+          unzip -p "dist/$SLUG-$VERSION.zip" "$SLUG/$SLUG.php" | grep -qE "^ \* Version: +$VERSION$"
+          node scripts/build-manifest.mjs > dist/latest.json
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          head -8 dist/latest.json
+
+      - name: Attach ZIP to GitHub Release
+        if: env.TAG != ''
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          cp "dist/$SLUG-$VERSION.zip" "dist/$SLUG.zip"
+          gh release upload "$TAG" "dist/$SLUG-$VERSION.zip" "dist/$SLUG.zip" --clobber
+
+      - name: Upload to Bunny Storage
+        env:
+          # Falls back to the eightam-wp zone and the older BUNNY_STORAGE_KEY name.
+          ZONE: ${{ secrets.BUNNY_STORAGE_ZONE || 'eightam-wp' }}
+          KEY: ${{ secrets.BUNNY_SECRET || secrets.BUNNY_STORAGE_KEY }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ZONE" ] || [ -z "$KEY" ]; then
+            echo "::error::BUNNY_SECRET (or BUNNY_STORAGE_KEY) not set"; exit 1
+          fi
+          case "$ZONE" in http*) STORAGE="$ZONE" ;; *) STORAGE="https://storage.bunnycdn.com/$ZONE" ;; esac
+          BASE="${STORAGE%/}/$SLUG"
+          ZIP="$SLUG-$VERSION.zip"
+
+          put() {
+            local sum
+            sum=$(sha256sum "$1" | cut -d' ' -f1 | tr 'a-f' 'A-F')
+            curl -fsS -X PUT -H "AccessKey: $KEY" -H "Content-Type: $3" -H "Checksum: $sum" \
+              --data-binary "@$1" "$BASE/$2"
+            echo
+          }
+
+          # Versioned ZIPs are immutable: never overwrite one that already exists.
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -H "AccessKey: $KEY" "$BASE/$ZIP")
+          if [ "$STATUS" = "200" ]; then
+            echo "$ZIP already in storage: keeping it, updating latest.json only."
           else
-            echo "release=true" >> "$GITHUB_OUTPUT"
+            put "dist/$ZIP" "$ZIP" application/zip
           fi
-          echo "version=$header" >> "$GITHUB_OUTPUT"
 
-      - name: Check
-        if: steps.version.outputs.release == 'true'
-        run: |
-          find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
-          for f in assets/*.js; do node --check "$f"; done
+          # Stable alias for installers that need a fixed URL (RunCloud Canvas).
+          put "dist/$ZIP" "$SLUG.zip" application/zip
 
-      - name: Pack
-        if: steps.version.outputs.release == 'true'
-        run: |
-          git archive --format=zip --prefix=eightam-og-image/ -o eightam-og-image.zip HEAD
-          unzip -l eightam-og-image.zip
+          # Manifest last: sites never see a version whose ZIP is missing.
+          put dist/latest.json latest.json application/json
 
-      - name: Release notes
-        if: steps.version.outputs.release == 'true'
+      - name: Purge alias on pull zone
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          API: ${{ secrets.BUNNY_API_KEY }}
         run: |
-          # The readme's changelog entry for this version, as Markdown.
-          awk -v v="= $VERSION =" '
-            $0 == v { on = 1; next }
-            on && /^= / { exit }
-            on && /^== / { exit }
-            on { print }
-          ' readme.txt > notes.md
-          if [ ! -s notes.md ]; then
-            echo "Version $VERSION." > notes.md
-          fi
-          cat notes.md
+          if [ -z "$API" ]; then echo "BUNNY_API_KEY not set: $SLUG.zip alias stays edge-cached until it expires."; exit 0; fi
+          curl -fsS -X POST -H "AccessKey: $API" -G "https://api.bunny.net/purge" --data-urlencode "url=$PULL_ZONE/$SLUG/$SLUG.zip"
+          echo "Purged $PULL_ZONE/$SLUG/$SLUG.zip"
 
-      - name: Publish
-        if: steps.version.outputs.release == 'true'
+      - name: Verify pull zone
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.build.outputs.version }}
         run: |
-          gh release create "v$VERSION" eightam-og-image.zip \
-            --target "$GITHUB_SHA" \
-            --title "8am OG Image $VERSION" \
-            --notes-file notes.md \
-            --latest
+          set -euo pipefail
+          # The pull zone caches a 404 for 5 min, so a first publish can look missing: poll up to 8 min.
+          for i in $(seq 1 16); do
+            LIVE=$(curl -fsS "$PULL_ZONE/$SLUG/latest.json?v=$VERSION-$i" 2>/dev/null | jq -r .version 2>/dev/null || true)
+            if [ "$LIVE" = "$VERSION" ]; then break; fi
+            echo "latest.json on pull zone: ${LIVE:-missing} (built: $VERSION), retrying in 30 s"
+            sleep 30
+          done
+          [ "$LIVE" = "$VERSION" ] || { echo "::error::Pull zone serves ${LIVE:-nothing}, expected $VERSION"; exit 1; }
+          curl -fsS -o /dev/null -w "ZIP: %{http_code}\n" "$PULL_ZONE/$SLUG/$SLUG-$VERSION.zip"
+          echo "latest.json on pull zone: $LIVE"

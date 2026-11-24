@@ -1,20 +1,21 @@
 <?php
 /**
- * Updates from the plugin's public repository on GitHub.
+ * Updates from the 8am CDN (Bunny).
  *
- * The plugin's header names `Update URI: https://github.com/eightam/…`, so
- * WordPress asks no one but this file about it: not WordPress.org, where a
- * plugin of the same slug could otherwise be offered in its place. When
- * WordPress checks for updates, `update_plugins_github.com` is asked, and
- * this file answers with the repository's latest release — its version and
- * its eightam-og-image.zip, which the release workflow builds
- * (.github/workflows/release.yml). WordPress compares the version, shows the
- * update on the Plugins screen and installs the zip like any other, and
- * automatic updates work if they are turned on for the plugin.
+ * The release workflow (.github/workflows/release.yml) uploads each version
+ * as eightam-og-image-X.Y.Z.zip to https://eightam-wp.b-cdn.net/eightam-og-image/
+ * and then latest.json, which names it. This file reads latest.json and puts
+ * a newer version into WordPress's list of plugin updates, so the Plugins
+ * screen offers it, "View details" shows its changelog, and automatic updates
+ * work when they are turned on. The 8am Toolkit reads the same file; both
+ * write the same entry, so the plugin updates with or without it.
  *
- * The latest release is asked for at most every six hours, without a token:
- * GitHub allows sixty such requests an hour from one address. "Check again"
- * on Dashboard → Updates asks at once.
+ * The header's `Update URI` names the CDN, which keeps WordPress.org from
+ * offering a plugin of the same slug in its place.
+ *
+ * latest.json is fetched at most every twelve hours, or one hour after a
+ * failure. "Check again" on Dashboard → Updates fetches it at once. Hooked on
+ * every request, not only in the admin: automatic updates run from cron.
  *
  * @package EightamOgImage
  */
@@ -30,56 +31,39 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const REPOSITORY = 'eightam/eightam-wp-og-image';
-const ASSET      = 'eightam-og-image.zip';
-const CACHE      = 'eightam_og_image_release';
+const SLUG         = 'eightam-og-image';
+const MANIFEST_URL = 'https://eightam-wp.b-cdn.net/eightam-og-image/latest.json';
+const CACHE        = 'eightam_og_image_manifest';
 
 /**
- * The latest release: version, package, url, notes and date. Null if there
- * is none, or GitHub could not be asked; a failure is remembered for an hour.
+ * latest.json, or null if it could not be read; a failure is remembered for
+ * an hour.
  *
- * @param bool $fresh Ask GitHub even if the answer is remembered.
- * @return array{version:string,package:string,url:string,notes:string,date:string}|null
+ * @param bool $fresh Fetch it even if it is remembered.
  */
-function release( bool $fresh = false ): ?array {
+function manifest( bool $fresh = false ): ?object {
 	$cached = get_site_transient( CACHE );
-	if ( ! $fresh && is_array( $cached ) ) {
-		return $cached ? $cached : null;
+	if ( ! $fresh && false !== $cached ) {
+		return is_object( $cached ) ? $cached : null;
 	}
 
 	$response = wp_remote_get(
-		'https://api.github.com/repos/' . REPOSITORY . '/releases/latest',
+		(string) apply_filters( 'eightam_og_image_update_manifest_url', MANIFEST_URL ),
 		array(
 			'timeout' => 10,
-			'headers' => array(
-				'Accept'     => 'application/vnd.github+json',
-				'User-Agent' => 'eightam-og-image/' . VERSION . '; ' . home_url( '/' ),
-			),
+			'headers' => array( 'Accept' => 'application/json' ),
 		)
 	);
-	$data = is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ? null : json_decode( (string) wp_remote_retrieve_body( $response ), true );
-
-	$package = '';
-	foreach ( is_array( $data ) ? (array) ( $data['assets'] ?? array() ) : array() as $asset ) {
-		if ( ASSET === ( $asset['name'] ?? '' ) && str_starts_with( (string) ( $asset['browser_download_url'] ?? '' ), 'https://github.com/' . REPOSITORY . '/' ) ) {
-			$package = (string) $asset['browser_download_url'];
+	$data     = null;
+	if ( ! is_wp_error( $response ) && 200 === (int) wp_remote_retrieve_response_code( $response ) ) {
+		$json = json_decode( (string) wp_remote_retrieve_body( $response ) );
+		if ( is_object( $json ) && ! empty( $json->version ) && ! empty( $json->download_url ) ) {
+			$data = $json;
 		}
 	}
-	$version = is_array( $data ) ? ltrim( (string) ( $data['tag_name'] ?? '' ), 'vV' ) : '';
-	if ( '' === $package || ! preg_match( '/^\d+(\.\d+)*$/', $version ) ) {
-		set_site_transient( CACHE, array(), HOUR_IN_SECONDS );
-		return null;
-	}
 
-	$release = array(
-		'version' => $version,
-		'package' => $package,
-		'url'     => (string) ( $data['html_url'] ?? 'https://github.com/' . REPOSITORY ),
-		'notes'   => (string) ( $data['body'] ?? '' ),
-		'date'    => (string) ( $data['published_at'] ?? '' ),
-	);
-	set_site_transient( CACHE, $release, 6 * HOUR_IN_SECONDS );
-	return $release;
+	set_site_transient( CACHE, $data ?? 'error', $data ? 12 * HOUR_IN_SECONDS : HOUR_IN_SECONDS );
+	return $data;
 }
 
 /**
@@ -90,39 +74,54 @@ function plugin(): string {
 	return plugin_basename( FILE );
 }
 
-add_filter( 'update_plugins_github.com', __NAMESPACE__ . '\\check', 10, 3 );
+add_filter( 'site_transient_update_plugins', __NAMESPACE__ . '\\inject' );
 /**
- * Answer WordPress's check for updates with the latest release.
+ * Put the CDN's version into WordPress's list of plugin updates: under
+ * `response` when it is newer, under `no_update` otherwise, which lets the
+ * Plugins screen offer automatic updates.
  *
- * @param array|false $update      An answer so far.
- * @param array       $plugin_data The plugin's header.
- * @param string      $plugin_file Which plugin.
- * @return array|false
+ * @param mixed $transient The update_plugins site transient.
+ * @return mixed
  */
-function check( $update, $plugin_data, $plugin_file ) {
-	if ( plugin() !== $plugin_file ) {
-		return $update;
+function inject( $transient ) {
+	static $forced = false;
+	if ( ! is_object( $transient ) || empty( $transient->checked ) ) {
+		return $transient;
 	}
-	// "Check again" on Dashboard → Updates asks GitHub at once.
-	$fresh   = is_admin() && isset( $_GET['force-check'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- core's own flag.
-	$release = release( $fresh );
-	if ( ! $release ) {
-		return $update;
+	// "Check again" on Dashboard → Updates fetches latest.json at once, once per request.
+	$fresh  = ! $forced && is_admin() && isset( $_GET['force-check'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- core's own flag.
+	$forced = $forced || $fresh;
+	$m      = manifest( $fresh );
+	if ( ! $m ) {
+		return $transient;
 	}
-	return array(
-		'id'           => 'https://github.com/' . REPOSITORY,
-		'slug'         => dirname( plugin() ),
-		'version'      => $release['version'],
-		'url'          => 'https://github.com/' . REPOSITORY,
-		'package'      => $release['package'],
-		'requires'     => (string) ( $plugin_data['RequiresWP'] ?? '' ),
-		'requires_php' => (string) ( $plugin_data['RequiresPHP'] ?? '' ),
+
+	$file    = plugin();
+	$current = (string) ( $transient->checked[ $file ] ?? VERSION );
+	$item    = (object) array(
+		'id'           => $file,
+		'slug'         => SLUG,
+		'plugin'       => $file,
+		'new_version'  => (string) $m->version,
+		'url'          => (string) ( $m->homepage ?? '' ),
+		'package'      => (string) $m->download_url,
+		'tested'       => (string) ( $m->tested ?? '' ),
+		'requires'     => (string) ( $m->requires ?? '' ),
+		'requires_php' => (string) ( $m->requires_php ?? '' ),
 	);
+
+	if ( version_compare( (string) $m->version, $current, '>' ) ) {
+		$transient->response[ $file ] = $item;
+		unset( $transient->no_update[ $file ] );
+	} else {
+		$transient->no_update[ $file ] = $item;
+	}
+	return $transient;
 }
 
 add_filter( 'plugins_api', __NAMESPACE__ . '\\details', 20, 3 );
 /**
- * The "View details" window of the Plugins screen: the release's notes.
+ * The "View details" window of the Plugins screen.
  *
  * @param false|object|array $result An answer so far.
  * @param string             $action What is asked.
@@ -130,55 +129,29 @@ add_filter( 'plugins_api', __NAMESPACE__ . '\\details', 20, 3 );
  * @return false|object|array
  */
 function details( $result, $action, $args ) {
-	if ( 'plugin_information' !== $action || ! is_object( $args ) || ( $args->slug ?? '' ) !== dirname( plugin() ) ) {
+	if ( 'plugin_information' !== $action || ! is_object( $args ) || SLUG !== ( $args->slug ?? '' ) ) {
 		return $result;
 	}
-	$release = release();
-	$header  = get_plugin_data( FILE, false, true );
+	$m = manifest();
+	if ( ! $m ) {
+		return $result;
+	}
 	return (object) array(
-		'name'          => (string) $header['Name'],
-		'slug'          => dirname( plugin() ),
-		'version'       => $release ? $release['version'] : VERSION,
-		'author'        => (string) $header['Author'],
-		'homepage'      => 'https://github.com/' . REPOSITORY,
-		'requires'      => (string) $header['RequiresWP'],
-		'requires_php'  => (string) $header['RequiresPHP'],
-		'last_updated'  => $release ? $release['date'] : '',
-		'download_link' => $release ? $release['package'] : '',
+		'name'          => (string) ( $m->name ?? '8am OG Image' ),
+		'slug'          => SLUG,
+		'version'       => (string) $m->version,
+		'author'        => '<a href="https://8am.ch">8am</a>',
+		'homepage'      => (string) ( $m->homepage ?? '' ),
+		'download_link' => (string) $m->download_url,
+		'tested'        => (string) ( $m->tested ?? '' ),
+		'requires'      => (string) ( $m->requires ?? '' ),
+		'requires_php'  => (string) ( $m->requires_php ?? '' ),
+		'last_updated'  => (string) ( $m->last_updated ?? '' ),
 		'sections'      => array(
-			'description' => wpautop( esc_html( (string) $header['Description'] ) ),
-			'changelog'   => $release ? '<h4>' . esc_html( $release['version'] ) . '</h4>' . notes( $release['notes'] ) : '',
+			'description' => esc_html( (string) ( $m->description ?? '' ) ),
+			'changelog'   => (string) ( $m->changelog ?? '' ),
 		),
 	);
-}
-
-/**
- * A release's notes as HTML: its lines starting "* " as a list, the rest as
- * paragraphs, `code` as code.
- *
- * @param string $text The notes, as the release workflow writes them.
- */
-function notes( string $text ): string {
-	$html  = '';
-	$items = array();
-	$flush = static function () use ( &$items, &$html ): void {
-		if ( $items ) {
-			$html .= '<ul><li>' . implode( '</li><li>', $items ) . '</li></ul>';
-			$items = array();
-		}
-	};
-	foreach ( preg_split( '/\R/', $text ) as $line ) {
-		$line = trim( (string) $line );
-		$safe = (string) preg_replace( '/`([^`]+)`/', '<code>$1</code>', esc_html( (string) preg_replace( '/^[*-]\s+/', '', $line ) ) );
-		if ( preg_match( '/^[*-]\s+/', $line ) ) {
-			$items[] = $safe;
-		} else {
-			$flush();
-			$html .= '' !== $line ? '<p>' . $safe . '</p>' : '';
-		}
-	}
-	$flush();
-	return $html;
 }
 
 add_filter( 'upgrader_source_selection', __NAMESPACE__ . '\\keep_folder', 10, 4 );
@@ -206,10 +179,16 @@ function keep_folder( $source, $remote_source, $upgrader, $hook_extra ) {
 	return $wp_filesystem->move( (string) $source, $wanted, true ) ? $wanted : new \WP_Error( 'eightam_og_image_folder', __( 'The update could not be moved into the plugin’s folder.', 'eightam-og-image' ) );
 }
 
-add_action( 'upgrader_process_complete', __NAMESPACE__ . '\\forget', 10, 0 );
+add_action( 'upgrader_process_complete', __NAMESPACE__ . '\\forget', 10, 2 );
 /**
- * After any update, ask GitHub afresh next time.
+ * After a plugin update, fetch latest.json afresh next time.
+ *
+ * @param mixed $upgrader The upgrader.
+ * @param array $options  What was done.
  */
-function forget(): void {
-	delete_site_transient( CACHE );
+function forget( $upgrader = null, $options = array() ): void {
+	if ( 'plugin' === ( $options['type'] ?? '' ) ) {
+		delete_site_transient( CACHE );
+		delete_site_transient( 'eightam_og_image_release' ); // The GitHub updater's, up to 1.4.1.
+	}
 }
