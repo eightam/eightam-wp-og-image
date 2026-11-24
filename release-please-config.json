@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "f8044765239b38dffd54cefa4684214639e102fd",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "eightam-og-image",
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "eightam-og-image.php"
+      ]
+    }
+  }
+}
