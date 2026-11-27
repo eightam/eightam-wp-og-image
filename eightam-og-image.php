@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/eightam/eightam-wp-og-image
  * Description:       A share image for every page, drawn from one template — the logo, the title, a bar of colour and the featured image — and drawn again when the title or the image changes, with the Open Graph and Twitter tags that point to it. A post can have an image of its own instead.
  * x-release-please-start-version
- * Version:           1.4.1
+ * Version:           1.5.0
  * x-release-please-end
  * Requires at least: 6.7
  * Requires PHP:      8.1
@@ -46,7 +46,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION = '1.4.1'; // x-release-please-version
+const VERSION = '1.5.0'; // x-release-please-version
 
 /*
  * The plugin's main file as WordPress addresses it: in its folder under the

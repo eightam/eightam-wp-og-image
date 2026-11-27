@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/eightam/eightam-wp-og-image/compare/v1.4.1...v1.5.0) (2026-11-27)
+
+
+### Features
+
+* updates come from the 8am CDN, versioned by release-please ([66d7dcd](https://github.com/eightam/eightam-wp-og-image/commit/66d7dcd8fd14725c06585cb2157f58fa4c1f42dd))
+* updates come from the 8am CDN, versioned by release-please ([36a2074](https://github.com/eightam/eightam-wp-og-image/commit/36a207402e9b93a36bfcc25d0c691f39d32f34cf))
+
 ## 1.4.1
 
 * A password-protected post's excerpt is left off its card for every visitor. Before, a visitor who had entered the password could have the card drawn during their visit with the excerpt under the title, in a public file.
